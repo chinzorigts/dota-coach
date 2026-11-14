@@ -97,6 +97,12 @@ function lineupFrom(raw: RawGsi): { radiant: number[]; dire: number[] } {
   return { radiant: ids("team2"), dire: ids("team3") };
 }
 
+/**
+ * GSI lists more than hero skills: the high-five emote, guild banner, seasonal event abilities (often at level 12),
+ * shrine/lantern/portal actions. They aren't leveled with skill points and would break the point count.
+ */
+const NOT_HERO_ABILITY = /^(generic_hidden|plus_|seasonal_|ability_capture|ability_lamp|ability_pluck|twin_gate_portal|abyssal_underlord_portal_warp|cny_|frostivus|special_bonus_attributes$)/;
+
 const n = (v: unknown, d = 0) => (typeof v === "number" && Number.isFinite(v) ? v : d);
 
 function toItem(slot: string, raw: RawItem | undefined): ItemState | null {
@@ -127,7 +133,7 @@ export function normalize(raw: RawGsi, now = Date.now()): GameSnapshot {
       cooldown: n(a.cooldown),
       ultimate: Boolean(a.ultimate),
     }))
-    .filter((a) => a.name && !a.name.startsWith("generic_hidden"))
+    .filter((a) => a.name && !NOT_HERO_ABILITY.test(a.name))
     .sort((a, b) => a.slot - b.slot);
 
   const items = raw.items ?? {};

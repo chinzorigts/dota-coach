@@ -12,8 +12,11 @@ export function pointsEarned(level: number): number {
   return pts;
 }
 
+/** The hero's own skills that take points: no innates, and nothing that isn't in the hero's ability list */
 function levelableAbilities(s: GameSnapshot) {
-  return s.abilities.filter((a) => !getAbility(a.name).innate);
+  const own = s.hero ? getHeroAbilities(s.hero.name)?.abilities : undefined;
+  const ownSet = own?.length ? new Set(own) : null;
+  return s.abilities.filter((a) => !getAbility(a.name).innate && (!ownSet || ownSet.has(a.name)));
 }
 
 /** Approximate: abilities granted at level 1 by Shard/Scepter can make this undercount */
@@ -33,6 +36,21 @@ export function defaultPriority(s: GameSnapshot): string[] {
   return levelableAbilities(s)
     .filter((a) => !a.ultimate)
     .map((a) => a.name);
+}
+
+/**
+ * The pick at your next level-up: the same rules run one level ahead. Skips levels that grant no point.
+ * Null when a point is already waiting (that one is `next`) or there's nothing left to level.
+ */
+export function upcomingSkill(s: GameSnapshot, aiPriority: string[] | null): (SkillRec & { atLevel: number }) | null {
+  const hero = s.hero;
+  if (!hero || unspentPoints(s) > 0) return null;
+  let level = hero.level + 1;
+  while (level <= 30 && NO_POINT_LEVELS.has(level)) level++;
+  if (level > 30) return null;
+  const ahead: GameSnapshot = { ...s, hero: { ...hero, level } };
+  const next = recommendSkill(ahead, aiPriority).next;
+  return next ? { ...next, atLevel: level } : null;
 }
 
 export function recommendSkill(

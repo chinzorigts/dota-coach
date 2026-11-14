@@ -32,7 +32,7 @@ export interface Report {
   role: "core" | "support";
   stats: { kda: string; kdaRatio: number; lhPerMin: number; netWorth: number };
   items: ItemRec[];
-  skills: { unspent: number; next: SkillRec | null; priority: string[]; prioritySource: "ai" | "default" };
+  skills: { unspent: number; next: SkillRec | null; upcoming: (SkillRec & { atLevel: number }) | null; priority: string[]; prioritySource: "ai" | "default" };
   alerts: Alert[];
   timers: TimerInfo[];
 }
@@ -76,13 +76,14 @@ export interface CoachState {
   apiKey: ApiKeyStatus;
   popularitySource: "opendota" | "default";
   names: { abilities: Record<string, string>; items: Record<string, string> };
-  ai: { enabled: boolean; model: string; pending: AiAdvice["reason"] | null; error: string | null; advice: AiAdvice | null };
+  ai: { enabled: boolean; model: string; pending: AiAdvice["reason"] | null; error: string | null; advice: AiAdvice | null; lastMs?: number };
 }
 
 export interface Settings {
   ai: {
     enabled: boolean;
     model: string;
+    liveModel: string;
     effort: "low" | "medium" | "high";
     autoIntervalSec: number;
     triggers: { hero: boolean; death: boolean; periodic: boolean; enemies: boolean; purchase: boolean };

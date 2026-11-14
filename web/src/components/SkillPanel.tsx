@@ -32,6 +32,12 @@ export function SkillPanel({ snapshot, report, names }: { snapshot: Snapshot; re
           );
         })}
       </ul>
+      {!next && report.skills.upcoming && (
+        <p className="skill-upcoming">
+          At level {report.skills.upcoming.atLevel}: <strong>{names.abilities[report.skills.upcoming.key] ?? report.skills.upcoming.name}</strong>
+          {report.skills.upcoming.options?.length ? ` (${report.skills.upcoming.options.map((o) => o.name).join(" / ")})` : ""}
+        </p>
+      )}
       {next?.kind === "talent" && (
         <div className="talent">
           <strong>{next.name}</strong>

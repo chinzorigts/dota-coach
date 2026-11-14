@@ -176,6 +176,20 @@ describe("rank", () => {
   });
 });
 
+describe("upcoming skill", () => {
+  it("says what to take at the next level when no point is waiting", async () => {
+    const { upcomingSkill } = await import("../src/engine/skills.js");
+    // Level 5 with 5 points spent: nothing waiting; level 6 brings the ultimate
+    const s = normalize(rawGame({ level: 5, abilityLevels: [3, 1, 1, 0] }));
+    expect(upcomingSkill(s, null)).toMatchObject({ key: "juggernaut_omni_slash", atLevel: 6 });
+    // A point waiting now: that's `next`, not upcoming
+    expect(upcomingSkill(normalize(rawGame({ level: 6, abilityLevels: [3, 1, 1, 0] })), null)).toBeNull();
+    // Level 16 -> 17 grants no point, so the next pick is at 18
+    const lvl16 = normalize(rawGame({ level: 16, abilityLevels: [4, 4, 4, 2], talents: [true, false, true, false, false, false, false, false] }));
+    expect(upcomingSkill(lvl16, null)?.atLevel).toBe(18);
+  });
+});
+
 describe("stale game data", () => {
   it("drops the last game once Dota has been quiet past the heartbeat", () => {
     const state = new CoachState(new Advisor({ runtime: rt(false), call: null }), async () => null, undefined as never, new SettingsStore(null), async () => null, async () => null, async () => null);
