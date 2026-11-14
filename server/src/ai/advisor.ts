@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { GameSnapshot } from "../gsi/normalize.js";
-import { getItem } from "../data/constants.js";
+import { getItem, neutralTierOf } from "../data/constants.js";
+import { neutralTier } from "../engine/neutral.js";
 import type { CoachReport } from "../engine/types.js";
 import { ADVICE_SCHEMA, SYSTEM_PROMPT, buildUserPayload } from "./prompt.js";
 
@@ -10,13 +11,15 @@ export interface AiAdvice {
   next_items: { item: string; reason: string }[];
   skill_priority: string[];
   tips: string[];
+  /** Neutral item pick from the current tier's list */
+  neutral?: { item: string; reason: string } | null;
   at: number; // Date.now()
   clock: number; // game clock
   reason: TriggerReason;
   question?: string;
 }
 
-export type TriggerReason = "hero" | "death" | "respawn" | "minute" | "enemies" | "purchase" | "manual";
+export type TriggerReason = "hero" | "death" | "respawn" | "minute" | "neutral" | "enemies" | "purchase" | "manual";
 
 /** What you bought instead of the suggestion, passed to the model so it can rebuild the plan */
 export interface PurchaseNote {
@@ -36,7 +39,10 @@ export interface AdvisorStatus {
 }
 
 /** The actual API call. Tests swap in a fake. */
-export type AdviceCaller = (payload: unknown, reason?: TriggerReason) => Promise<Omit<AiAdvice, "at" | "clock" | "reason" | "question">>;
+export type AdviceCaller = (
+  payload: unknown,
+  reason?: TriggerReason,
+) => Promise<Omit<AiAdvice, "at" | "clock" | "reason" | "question" | "neutral"> & { neutral_item?: string; neutral_reason?: string }>;
 
 interface TriggerMemory {
   key: string | null; // matchId + hero
@@ -45,6 +51,8 @@ interface TriggerMemory {
   lastCallAt: number;
   /** Hero alive at the last update; a false -> true flip is a respawn */
   alive?: boolean;
+  /** Neutral tier at the last call; a new tier needs a new pick */
+  neutralTier?: number;
 }
 
 const BUCKET_SEC = 5 * 60;
@@ -86,6 +94,8 @@ export function decideTrigger(
   if (mem.key !== key) return triggers.hero ? "hero" : null;
   if (triggers.death && s.player.deaths > mem.deaths && sinceLast >= 30) return "death";
   if (triggers.respawn !== false && mem.alive === false && s.hero.alive && sinceLast >= 10) return "respawn";
+  // A new neutral tier opened since the last read: its pick needs a fresh answer (follows the periodic toggle)
+  if (triggers.periodic && mem.neutralTier !== undefined && neutralTier(s.clockTime) > mem.neutralTier && sinceLast >= 20) return "neutral";
   const bucket = Math.floor(Math.max(0, s.clockTime) / BUCKET_SEC);
   if (triggers.periodic && bucket > mem.minuteBucket && sinceLast >= minIntervalSec) return "minute";
   return null;
@@ -233,6 +243,7 @@ export class Advisor {
       minuteBucket: Math.floor(Math.max(0, s.clockTime) / BUCKET_SEC),
       lastCallAt: this.now(),
       alive: s.hero?.alive ?? this.mem.alive,
+      neutralTier: neutralTier(s.clockTime),
     };
     this.state = { ...this.state, pending: reason, error: null };
     this.emit();
@@ -251,6 +262,8 @@ export class Advisor {
           next_items: (raw.next_items ?? []).filter((i) => getItem(i.item)).slice(0, 4),
           skill_priority: raw.skill_priority ?? [],
           tips: (raw.tips ?? []).slice(0, 4),
+          // Only a real neutral item key counts; the engine also checks it's from the current tier
+          neutral: raw.neutral_item && neutralTierOf(raw.neutral_item) ? { item: raw.neutral_item, reason: String(raw.neutral_reason ?? "") } : null,
           at: this.now(),
           clock: s.clockTime,
           reason,

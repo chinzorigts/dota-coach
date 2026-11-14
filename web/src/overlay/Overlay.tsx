@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { playOverlaySound } from "./sounds";
 import { useCoach, post } from "../useCoach";
 import { Img } from "../components/Img";
-import { abilityImg, clock, gold as fmt, heroIcon } from "../format";
+import { abilityImg, clock, gold as fmt, heroIcon, itemImg } from "../format";
 import { bridge, type OverlayMode } from "./bridge";
 import { OpponentsPanel } from "./OpponentsPanel";
 import { StatsCompareCompact } from "../components/StatsCompare";
@@ -29,6 +29,23 @@ function idleText(connected: boolean, gameState: string | undefined, gsiAgeMs: n
   }
 }
 
+const SOURCE_LABEL = { ai: "AI pick", counter: "Counters enemy", meta: "Popular build", rule: "Basic" } as const;
+
+/** One HUD row: a short label on the left, content on the right, so every row scans the same way */
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <section className="ov-sec">
+      <span className="ov-label">{label}</span>
+      <div className="ov-sec-body">{children}</div>
+    </section>
+  );
+}
+
+/** Status at a glance: go = act now (gold), ok = done/ahead (green), bad = behind (red), muted = later */
+function Pill({ tone, children }: { tone: "go" | "ok" | "bad" | "muted"; children: React.ReactNode }) {
+  return <span className={`ov-pill ${tone}`}>{children}</span>;
+}
+
 /**
  * Compact HUD drawn over the game. Everything here must be readable in a glance,
  * so it shows only what changes a decision: next buy, next skill, danger, the nearest timers, AI summary.
@@ -41,6 +58,20 @@ export function Overlay() {
   const [calibrated, setCalibrated] = useState(true);
   const [q, setQ] = useState("");
   const [err, setErr] = useState<string | null>(null);
+
+  // Keep the window as tall as the content while locked (unlocked, you size it yourself)
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    const fit = bridge()?.fitHeight;
+    if (!el || !fit || !locked) return;
+    // + the 6px margin on each side and a little slack
+    const report = () => fit(Math.ceil(el.getBoundingClientRect().height) + 14);
+    const ro = new ResizeObserver(report);
+    ro.observe(el);
+    report();
+    return () => ro.disconnect();
+  }, [locked]);
 
   useEffect(() => {
     document.documentElement.classList.add("overlay-root");
@@ -83,7 +114,7 @@ export function Overlay() {
     : undefined;
 
   return (
-    <div className={`ov ${locked ? "locked" : "unlocked"}`} style={style}>
+    <div ref={rootRef} className={`ov ${locked ? "locked" : "unlocked"}`} style={style}>
       {!locked && (
         <div className="ov-handle">
           <span>Drag to move, resize from the edges</span>
@@ -101,93 +132,130 @@ export function Overlay() {
         </>
       ) : (
         <>
+          {/* 1. Danger first: the one thing that can't wait */}
+          {show("alerts") && r.alerts.filter((a) => a.level === "danger").slice(0, 1).map((a) => (
+            <p key={a.id} className="ov-alert" role="alert">{a.text}</p>
+          ))}
+
+          {/* 2. Buy: the main pick large, the next two small */}
           {show("item") && r.items[0] && (() => {
             const it = r.items[0];
             const g = s.player?.gold ?? 0;
             const pct = it.remaining === 0 ? 100 : Math.min(100, (g / it.remaining) * 100);
+            const inProgress = it.reason.match(/In progress, (\d+)% built/);
+            const why = inProgress ? `${inProgress[1]}% built` : SOURCE_LABEL[it.source];
+            const offPlan = [...(state.purchases ?? [])].reverse().find((x) => !x.followed);
+            const showOffPlan = offPlan && s.clockTime - offPlan.clock <= 60;
             return (
-              <div className={`ov-row ${it.affordable ? "ready" : ""}`}>
-                <Img src={it.img} label={it.name} width={44} height={32} />
-                <div className="ov-main">
-                  <div className="ov-line">
-                    <strong>{it.name}</strong>
-                    <span className="ov-gold">{it.affordable ? "Buy now" : `${fmt(Math.max(0, it.remaining - g))} more`}</span>
+              <Section label="Buy">
+                <div className={`ov-buy ${it.affordable ? "ready" : ""}`}>
+                  <Img src={it.img} label={it.name} width={40} height={29} />
+                  <div className="ov-buy-main">
+                    <div className="ov-line">
+                      <strong>{it.name}</strong>
+                      <Pill tone={it.affordable ? "go" : "muted"}>{it.affordable ? "Buy now" : `${fmt(Math.max(0, it.remaining - g))} more`}</Pill>
+                    </div>
+                    <div className="ov-bar"><span style={{ width: `${pct}%` }} /></div>
+                    <small className="ov-why">{why}</small>
                   </div>
-                  <div className="ov-bar"><span style={{ width: `${pct}%` }} /></div>
                 </div>
-              </div>
+                {r.items.length > 1 && (
+                  <div className="ov-then">
+                    <span className="ov-then-label">Then</span>
+                    {r.items.slice(1, 3).map((n) => (
+                      <span key={n.key} className={`ov-then-item ${n.affordable ? "ready" : ""}`}>
+                        <Img src={n.img} label={n.name} width={22} height={16} />
+                        {n.name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {showOffPlan && (
+                  <small className="ov-note">
+                    Bought {offPlan!.name}
+                    {offPlan!.replaced.length ? ` instead of ${offPlan!.replaced.map((k) => state.names.items[k] ?? k).join(", ")}` : ""}, plan updated
+                  </small>
+                )}
+              </Section>
             );
           })()}
 
-          {show("item") && (() => {
-            // For a minute of game time after an off-plan buy, say that the list adapted to it
-            const p = [...(state.purchases ?? [])].reverse().find((x) => !x.followed);
-            if (!p || s.clockTime - p.clock > 60) return null;
-            const was = p.replaced.map((k) => state.names.items[k] ?? k).join(", ");
-            return <p className="ov-offplan">Bought {p.name}{was ? ` over ${was}` : ""}: plan updated</p>;
-          })()}
-
+          {/* 3. Skill: the point to spend now, or the next real pick and when */}
           {show("skill") && (r.skills.next || r.skills.upcoming) && (() => {
-            // Its own box, apart from items: the point to spend now, or what to take at the next level
             const sk = r.skills.next ?? r.skills.upcoming!;
             const now = Boolean(r.skills.next);
             const order = r.skills.priority.slice(0, 3);
+            const name = state.names.abilities[sk.key] ?? sk.name;
             return (
-              <div className={`ov-skill ${now ? "now" : ""}`}>
-                <div className="ov-row skill">
-                  {sk.kind === "ability" ? (
-                    <Img src={abilityImg(sk.key)} label={state.names.abilities[sk.key] ?? sk.name} width={32} height={32} />
-                  ) : (
-                    <span className="ov-star" aria-hidden>★</span>
-                  )}
-                  <div className="ov-main">
-                    <small className="ov-skill-when">{now ? `Skill point${r.skills.unspent > 1 ? ` ×${r.skills.unspent}` : ""}` : `At level ${r.skills.upcoming!.atLevel}`}</small>
-                    <strong>{state.names.abilities[sk.key] ?? sk.name}</strong>
+              <Section label="Skill">
+                <div className={`ov-item ${now ? "" : "later"}`}>
+                  {sk.kind === "ability"
+                    ? <Img src={abilityImg(sk.key)} label={name} width={26} height={26} />
+                    : <span className="ov-star" aria-hidden>★</span>}
+                  <div className="ov-item-main">
+                    <b>{name}</b>
                     {sk.options?.length ? <small>{sk.options.map((o) => o.name).join(" / ")}</small> : null}
                   </div>
+                  <Pill tone={now ? "go" : "muted"}>
+                    {now ? (r.skills.unspent > 1 ? `Now ×${r.skills.unspent}` : "Now") : `Lv ${r.skills.upcoming!.atLevel}`}
+                  </Pill>
                 </div>
                 {order.length > 1 && (
-                  <div className="ov-skill-order" aria-label="Skill maxing order">
+                  <div className="ov-order" aria-label="Skill maxing order">
+                    <span className="ov-then-label">Max</span>
                     {order.map((k, i) => (
-                      <span key={k}>
+                      <span key={k} className="ov-order-step">
                         {i > 0 && <i aria-hidden>›</i>}
-                        <Img src={abilityImg(k)} label={state.names.abilities[k] ?? k} width={18} height={18} />
+                        <Img src={abilityImg(k)} label={state.names.abilities[k] ?? k} width={16} height={16} />
                       </span>
                     ))}
-                    <small>max order</small>
                   </div>
                 )}
-              </div>
+              </Section>
             );
           })()}
 
-          {show("alerts") && r.alerts.filter((a) => a.level === "danger").slice(0, 2).map((a) => (
-            <p key={a.id} className="ov-alert">{a.text}</p>
-          ))}
+          {/* 4. Neutral item for the open tier */}
+          {show("neutral") && r.neutral?.pick && (
+            <Section label="Neutral">
+              <div className={`ov-item ${r.neutral.pick.held ? "later" : ""}`}>
+                <Img src={itemImg(r.neutral.pick.key)} label={r.neutral.pick.name} width={26} height={19} />
+                <div className="ov-item-main"><b>{r.neutral.pick.name}</b></div>
+                <Pill tone={r.neutral.pick.held ? "ok" : "go"}>{r.neutral.pick.held ? `T${r.neutral.tier} ✓ have` : `T${r.neutral.tier} pick`}</Pill>
+              </div>
+            </Section>
+          )}
+
+          {/* 5. Pace: you vs the average at this minute, worst first */}
+          {show("benchmark") && state.benchmark && <StatsCompareCompact b={state.benchmark} />}
 
           {show("enemies") && state.enemies.length > 0 && (
-            <div className="ov-enemies" aria-label="Enemy heroes">
-              {state.enemies.map((e) => (
-                <Img key={e} src={heroIcon(e)} label={e.replace("npc_dota_hero_", "")} width={22} height={22} />
-              ))}
-              {state.enemySource === "vision" && state.enemies.length < 5 && <small>detecting…</small>}
-            </div>
+            <Section label="Enemy">
+              <div className="ov-enemies" aria-label="Enemy heroes">
+                {state.enemies.map((e) => (
+                  <Img key={e} src={heroIcon(e)} label={e.replace("npc_dota_hero_", "")} width={20} height={20} />
+                ))}
+                {state.enemySource === "vision" && state.enemies.length < 5 && <small>detecting…</small>}
+              </div>
+            </Section>
           )}
 
           {show("opponents") && state.match && state.match.enemies.length > 0 && <OpponentsPanel match={state.match} />}
 
-          {show("benchmark") && state.benchmark && <StatsCompareCompact b={state.benchmark} />}
-
+          {/* 6. Timers */}
           {show("timers") && r.timers.length > 0 && (
-            <div className="ov-timers">
-              {r.timers.slice(0, 2).map((t) => (
-                <span key={t.id} className={t.inSeconds <= 15 ? "soon" : ""}>
-                  {t.label} <b>{clock(t.inSeconds)}</b>
-                </span>
-              ))}
-            </div>
+            <Section label="Next">
+              <div className="ov-timers">
+                {r.timers.slice(0, 2).map((t) => (
+                  <span key={t.id} className={t.inSeconds <= 15 ? "soon" : ""}>
+                    {t.label} <b>{clock(t.inSeconds)}</b>
+                  </span>
+                ))}
+              </div>
+            </Section>
           )}
 
+          {/* 7. Coach: the AI read, only while it still fits the game */}
           {show("ai") && state.ai.enabled && (() => {
             // Advice is a snapshot of one moment. On the HUD it only stays while it still describes the game:
             // up to 90 game-seconds (3 minutes for a question you asked), and never a death read once you're alive.
@@ -197,13 +265,15 @@ export function Overlay() {
             if (!state.ai.pending && !state.ai.error && !fresh) return null;
             return (
               <div className={`ov-ai ${fresh ? a!.danger : ""}`}>
-                {state.ai.pending ? (
-                  <p className="ov-pending">AI is thinking…</p>
-                ) : state.ai.error ? (
+                <div className="ov-ai-head">
+                  <span className="ov-label">Coach</span>
+                  {state.ai.pending ? <small className="ov-pending">thinking…</small> : fresh && age >= 20 ? <small className="ov-age">{clock(age)} ago</small> : null}
+                </div>
+                {state.ai.error ? (
                   <p className="ov-err">{state.ai.error}</p>
-                ) : (
-                  <p>{a!.summary}{age >= 20 && <small className="ov-age"> · {clock(age)} ago</small>}</p>
-                )}
+                ) : fresh ? (
+                  <p>{a!.summary}</p>
+                ) : null}
               </div>
             );
           })()}

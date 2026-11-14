@@ -55,4 +55,6 @@ export interface CoachReport {
   };
   alerts: Alert[];
   timers: TimerInfo[];
+  /** Neutral item tier open now and the pick for it */
+  neutral: import("./neutral.js").NeutralView | null;
 }

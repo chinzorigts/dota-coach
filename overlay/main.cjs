@@ -262,6 +262,17 @@ function createWindow() {
   win.on("moved", persist);
   win.on("resized", persist);
   win.webContents.on("did-finish-load", applyLock);
+  // The page reports its content height while locked; grow/shrink the window to fit so nothing is cut off.
+  // Width and position stay as you set them. Bounded so a runaway page can't cover the screen.
+  ipcMain.removeAllListeners("overlay:height");
+  ipcMain.on("overlay:height", (e, px) => {
+    if (!win || e.sender !== win.webContents || !locked || typeof px !== "number") return;
+    const area = screen.getDisplayMatching(win.getBounds()).workArea;
+    const [w, h] = win.getSize();
+    const target = Math.max(120, Math.min(px, Math.round(area.height * 0.8)));
+    if (Math.abs(target - h) > 4) win.setSize(w, target);
+  });
+
   win.on("closed", () => {
     win = null;
   });

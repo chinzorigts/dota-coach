@@ -19,4 +19,8 @@ contextBridge.exposeInMainWorld("dotaOverlay", {
     ipcRenderer.on("overlay:visibility", listener);
     return () => ipcRenderer.removeListener("overlay:visibility", listener);
   },
+  /** Ask the window to match the content's height, so nothing gets cut off @param {number} px */
+  fitHeight(px) {
+    if (typeof px === "number" && Number.isFinite(px)) ipcRenderer.send("overlay:height", Math.round(px));
+  },
 });

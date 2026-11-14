@@ -137,5 +137,17 @@ export function recommendItems(s: GameSnapshot, ctx: ItemContext): ItemRec[] {
     if (!wards) add("ward_observer", "No wards. Get vision up", "rule", 55);
   }
 
+  // Finish what you've started: an item whose parts you already hold (e.g. Staff + Blade + Ogre Axe toward
+  // Aghanim's) jumps ahead of fresh suggestions, more the closer it is to done. Rules (TP, wards) keep their place.
+  for (const r of recs.values()) {
+    if (r.source === "rule" || r.cost <= 0 || r.remaining >= r.cost) continue;
+    const built = 1 - r.remaining / r.cost;
+    if (built < 0.25) continue;
+    // 60 x share built: a 70%-built item outranks even the AI's top fresh pick (80)
+    r.priority += Math.round(60 * built);
+    const tag = `In progress, ${Math.round(built * 100)}% built`;
+    if (!r.reason.includes("In progress")) r.reason = `${tag} · ${r.reason}`;
+  }
+
   return [...recs.values()].sort((a, b) => b.priority - a.priority).slice(0, 6);
 }

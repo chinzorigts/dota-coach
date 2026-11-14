@@ -5,13 +5,14 @@ import { buildAlerts, type AlertPrefs } from "./alerts.js";
 import { inferRole, ownedItems, phaseOf, recommendItems } from "./items.js";
 import { recommendSkill, upcomingSkill } from "./skills.js";
 import { buildTimers } from "./timers.js";
+import { buildNeutral } from "./neutral.js";
 import type { CoachReport, RolePref } from "./types.js";
 
 export interface EngineContext {
   rolePref: RolePref;
   popularity: ItemPopularity | null;
   enemies: string[];
-  ai: { items: { item: string; reason: string }[]; skillPriority: string[] } | null;
+  ai: { items: { item: string; reason: string }[]; skillPriority: string[]; neutral?: { item: string; reason: string } | null } | null;
   /** Recommendations replaced by a different purchase this match */
   skipped?: string[];
   /** From the settings screen; defaults apply when absent */
@@ -48,6 +49,7 @@ export function buildReport(s: GameSnapshot, ctx: EngineContext): CoachReport {
     skills,
     alerts: buildAlerts(s, skills.unspent, items, ctx.prefs),
     timers: buildTimers(s, ctx.prefs?.timers),
+    neutral: buildNeutral(s, ctx.ai?.neutral),
   };
 }
 
