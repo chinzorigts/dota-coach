@@ -99,6 +99,16 @@ export function getItem(key: string): ItemInfo | undefined {
 
 export const itemKeyById = (id: number | string): string | undefined => itemIds[String(id)];
 
+/** Neutral items of one tier (1..5) in the installed dotaconstants, i.e. the current patch's list */
+export function neutralItemsOfTier(tier: number): { key: string; name: string }[] {
+  return Object.entries(items)
+    .filter(([, it]) => (it as RawItem & { tier?: number }).tier === tier)
+    .map(([key, it]) => ({ key, name: it.dname ?? key }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export const neutralTierOf = (key: string): number | null => (items[key] as (RawItem & { tier?: number }) | undefined)?.tier ?? null;
+
 export interface AbilityInfo {
   key: string;
   name: string;
@@ -106,11 +116,19 @@ export interface AbilityInfo {
   img: string;
 }
 
+/**
+ * Some talent names keep Valve's value placeholders ("+{s:bonus_movement_speed}% Infest Move Speed").
+ * The number isn't in the data, so drop the placeholder and a trailing %/s with it: "+ Infest Move Speed".
+ */
+export function cleanTemplate(name: string): string {
+  return name.replace(/\{s:[^}]*\}[%s]?/g, "").replace(/\s{2,}/g, " ").replace(/^\+\s*/, "+").trim();
+}
+
 export function getAbility(key: string): AbilityInfo {
   const a = abilities[key];
   return {
     key,
-    name: a?.dname ?? prettify(key),
+    name: a?.dname ? cleanTemplate(a.dname) : prettify(key),
     innate: Boolean(a?.is_innate),
     img: a?.img ? CDN + a.img.split("?")[0] : "",
   };

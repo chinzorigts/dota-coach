@@ -13,6 +13,7 @@ const TIMER_LABELS: Record<string, string> = {
 const SECTION_LABELS: Record<string, string> = {
   item: "Next item",
   skill: "Next skill",
+  neutral: "Neutral item pick",
   alerts: "Danger alerts",
   enemies: "Enemy heroes",
   opponents: "Enemy players",

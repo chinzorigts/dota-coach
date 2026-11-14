@@ -1,11 +1,12 @@
 import type { GameSnapshot } from "../gsi/normalize.js";
-import { getAbility, getHero, getItem } from "../data/constants.js";
+import { getAbility, getHero, getItem, neutralItemsOfTier } from "../data/constants.js";
+import { neutralTier } from "../engine/neutral.js";
 import type { CoachReport } from "../engine/types.js";
 
 export const ADVICE_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["summary", "danger", "next_items", "skill_priority", "tips"],
+  required: ["summary", "danger", "next_items", "skill_priority", "tips", "neutral_item", "neutral_reason"],
   properties: {
     summary: { type: "string", description: "One or two sentence summary of the current situation" },
     danger: { type: "string", enum: ["low", "medium", "high"] },
@@ -32,6 +33,11 @@ export const ADVICE_SCHEMA = {
       description: "Actionable play tips for right now. At most 4, one sentence each",
       items: { type: "string" },
     },
+    neutral_item: {
+      type: "string",
+      description: "Best neutral item key from neutral.options for this hero and game, or empty string when neutral is absent",
+    },
+    neutral_reason: { type: "string", description: "Short reason for the neutral pick, or empty string" },
   },
 } as const;
 
@@ -45,6 +51,7 @@ Rules:
 - rule_engine in the input is a stats- and rules-based recommendation. Follow it when you agree; when the enemy lineup or the situation calls for something better, change it and say why.
 - If the enemy list is empty, do not assume an enemy lineup; advise from the player's hero and situation.
 - If the player asked a question, answer it first in summary.
+- neutral_item must be one of the keys in neutral.options (the current tier's list); pick for this hero, role and the enemy lineup. If neutral.holding is already the best, return it.
 - The answer is read over the next minute or two, not only at this instant. If the hero is dead (alive=false), don't say they are dead: say what to do once they respawn (what to buy with the gold they have, where to go, what to avoid), and mention buyback only if it clearly matters.
 - If off_plan_purchase is present, the player just bought something other than the suggestion. Respect that choice: build around the item they bought, drop what it replaced, and say in summary how the plan changes.
 - Do not state patch-specific numbers (exact cooldowns, damage) you are unsure of.`;
@@ -92,7 +99,11 @@ export function buildUserPayload(
       net_worth_est: report.stats.netWorth,
     },
     items: ownedNames.map((k) => ({ key: k, name: getItem(k)?.name ?? k })),
-    neutral_item: s.items.neutral?.name ?? null,
+    neutral: (() => {
+      const tier = neutralTier(s.clockTime);
+      if (!tier) return undefined;
+      return { tier, holding: s.items.neutral?.name ?? null, options: neutralItemsOfTier(tier) };
+    })(),
     has_tp: Boolean(s.items.teleport),
     abilities: s.abilities
       .filter((a) => !getAbility(a.name).innate)

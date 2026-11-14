@@ -11,6 +11,7 @@ const REASON: Record<string, string> = {
   enemies: "Enemy lineup update",
   purchase: "Re-planned after your buy",
   respawn: "After respawn",
+  neutral: "New neutral tier",
   manual: "Your question",
 };
 const DANGER: Record<string, string> = { low: "Stable", medium: "Careful", high: "Danger" };

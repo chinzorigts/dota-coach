@@ -13,6 +13,7 @@ import { Settings } from "./components/Settings";
 import { StatsCompare } from "./components/StatsCompare";
 import { RankCard } from "./components/RankCard";
 import { DraftPanel } from "./components/DraftPanel";
+import { NeutralCard } from "./components/NeutralCard";
 
 /** #settings opens the settings screen; plain hash routing keeps it linkable from the server log */
 function useHashRoute() {
@@ -69,6 +70,7 @@ export default function App() {
               <ItemList items={r.items} gold={s.player?.gold ?? 0} source={state.popularitySource}
                 purchases={state.purchases} names={state.names.items} />
               <SkillPanel snapshot={s} report={r} names={state.names} />
+              {r.neutral && <NeutralCard n={r.neutral} aiOn={state.ai.enabled} />}
             </section>
             <section className="col col-side">
               <AiPanel ai={state.ai} names={state.names} clockNow={s.clockTime} />

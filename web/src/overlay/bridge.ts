@@ -7,6 +7,8 @@ export interface OverlayMode {
 
 export interface OverlayBridge {
   onMode(cb: (mode: OverlayMode) => void): () => void;
+  /** Older overlays don't have it */
+  fitHeight?: (px: number) => void;
 }
 
 declare global {

@@ -554,7 +554,7 @@ export class CoachState {
       rolePref: this.rolePref,
       popularity: this.popularity,
       enemies: this.enemies,
-      ai: advice ? { items: advice.next_items, skillPriority: advice.skill_priority } : null,
+      ai: advice ? { items: advice.next_items, skillPriority: advice.skill_priority, neutral: advice.neutral } : null,
       skipped: [...this.skipped],
       prefs: (() => {
         const c = this.settings.get().coach;

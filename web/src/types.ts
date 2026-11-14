@@ -35,6 +35,16 @@ export interface Report {
   skills: { unspent: number; next: SkillRec | null; upcoming: (SkillRec & { atLevel: number }) | null; priority: string[]; prioritySource: "ai" | "default" };
   alerts: Alert[];
   timers: TimerInfo[];
+  neutral: NeutralView | null;
+}
+
+// Keep in sync with server/src/engine/neutral.ts
+export interface NeutralView {
+  tier: number;
+  nextTierAt: number | null;
+  holding: { key: string; name: string; tier: number | null } | null;
+  pick: { key: string; name: string; reason: string; held: boolean } | null;
+  options: { key: string; name: string }[];
 }
 
 export interface AiAdvice {
@@ -45,7 +55,7 @@ export interface AiAdvice {
   tips: string[];
   at: number;
   clock: number;
-  reason: "hero" | "death" | "respawn" | "minute" | "enemies" | "purchase" | "manual";
+  reason: "hero" | "death" | "respawn" | "minute" | "neutral" | "enemies" | "purchase" | "manual";
   question?: string;
 }
 

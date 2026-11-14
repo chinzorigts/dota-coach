@@ -87,17 +87,22 @@ export function StatsCompareCompact({ b }: { b: BenchmarkView }) {
   const order = { bad: 0, ok: 1, good: 2 } as const;
   const rows = b.rows.filter((r) => r.verdict).sort((x, y) => order[x.verdict!] - order[y.verdict!]).slice(0, 4);
   if (!rows.length) return null;
+  const SHORT: Record<string, string> = { kills: "K", deaths: "D", assists: "A", lastHits: "LH", denies: "DN", gpm: "GPM", xpm: "XPM" };
   return (
-    <div className="ov-cmp" aria-label="You versus average">
-      {rows.map((r) => {
-        const ref = r.personal ?? r.heroMedian;
-        return (
-          <span key={r.key} className={r.verdict!}>
-            {r.label} <b>{fmt(r.value, r.key)}</b>
-            {ref !== null && <small> / {fmt(ref, r.key)}</small>}
-          </span>
-        );
-      })}
-    </div>
+    <section className="ov-sec" aria-label="You versus the average player at this minute">
+      <span className="ov-label">Pace</span>
+      <div className="ov-sec-body ov-cmp">
+        {rows.map((r) => {
+          const ref = r.personal ?? r.heroMedian;
+          return (
+            <span key={r.key} className={`ov-cmp-chip ${r.verdict!}`} title={`${r.label}: you ${fmt(r.value, r.key)}, average ${ref === null ? "–" : fmt(ref, r.key)}`}>
+              <i aria-hidden />
+              {SHORT[r.key] ?? r.label} <b>{fmt(r.value, r.key)}</b>
+              {ref !== null && <small>/{fmt(ref, r.key)}</small>}
+            </span>
+          );
+        })}
+      </div>
+    </section>
   );
 }
