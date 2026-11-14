@@ -28,6 +28,10 @@ const advisor = new Advisor({
 const state = new CoachState(advisor, undefined, undefined, settings);
 const { server } = createApp(state, advisor);
 
+// Rank and recent games for the account Dota reported last time, so they show before the game is even open
+const remembered = state.rememberedAccount();
+if (remembered) state.loadMeFor(remembered);
+
 // Dota closed (or a mock run ended): stop showing the last game as if it were live
 setInterval(() => {
   if (state.expireIfStale()) console.log("[gsi] no data from Dota for a while; showing the waiting screen");

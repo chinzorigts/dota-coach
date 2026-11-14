@@ -78,6 +78,7 @@ export interface CoachState {
   /** What you bought this match; followed = it was on the list */
   purchases: Purchase[];
   rank: RankView;
+  recentGames: RecentGames | null;
   draft: DraftView | null;
   match: MatchInfo | null;
   matchLog: { path: string | null; exists: boolean; lastLobbyAt: number | null; error: string | null } | null;
@@ -109,6 +110,30 @@ export interface Settings {
   matchInfo: { enabled: boolean; logPath: string };
   rank: { mmr: number | null; autoAdjust: boolean; perGame: number };
   draft: { position: Position };
+}
+
+// Keep in sync with CoachState.recentGames() in server/src/state.ts
+export interface RecentMatch {
+  matchId: number;
+  heroId: number;
+  hero: string | null;
+  heroName: string;
+  won: boolean;
+  kills: number;
+  deaths: number;
+  assists: number;
+  gpm: number;
+  xpm: number;
+  lastHits: number;
+  durationSec: number;
+  startTime: number;
+  ranked: boolean;
+}
+export interface RecentGames {
+  status: "ok" | "loading" | "unavailable";
+  matches: RecentMatch[];
+  wins?: number;
+  losses?: number;
 }
 
 // Keep in sync with server/src/engine/purchases.ts

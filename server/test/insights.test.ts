@@ -176,6 +176,31 @@ describe("rank", () => {
   });
 });
 
+describe("recent games", () => {
+  it("parses the last matches and works out wins from slot + result", async () => {
+    const { parseRecentMatches } = await import("../src/data/opendota.js");
+    const list = parseRecentMatches([
+      { match_id: 1, hero_id: 8, player_slot: 1, radiant_win: true, kills: 5, deaths: 2, assists: 7, gold_per_min: 600, xp_per_min: 700, last_hits: 200, duration: 2400, start_time: 100, lobby_type: 7 },
+      { match_id: 2, hero_id: 54, player_slot: 130, radiant_win: true, kills: 1, deaths: 9, assists: 3, gold_per_min: 300, duration: 1800, start_time: 50, lobby_type: 0 },
+      { match_id: 3 }, // incomplete: skipped
+    ]);
+    expect(list).toHaveLength(2);
+    expect(list[0]).toMatchObject({ won: true, ranked: true, kills: 5, gpm: 600 });
+    expect(list[1]).toMatchObject({ won: false, ranked: false });
+  });
+
+  it("loads them for the remembered account and adds hero names", async () => {
+    const settings = new SettingsStore(null);
+    const state = new CoachState(new Advisor({ runtime: rt(false), call: null }), async () => null, undefined as never, settings, async () => null, async () => null, async () => null);
+    state.loadRecent = async () => [{ matchId: 1, heroId: 8, won: true, kills: 5, deaths: 2, assists: 7, gpm: 600, xpm: 700, lastHits: 200, durationSec: 2400, startTime: 100, ranked: true }];
+    settings.saveData("me.json", { accountId: 42 });
+    state.loadMeFor(state.rememberedAccount()!);
+    expect(state.recentGames()?.status).toBe("loading");
+    await new Promise((r) => setTimeout(r, 0));
+    expect(state.recentGames()).toMatchObject({ status: "ok", wins: 1, losses: 0, matches: [{ heroName: "Juggernaut", hero: "npc_dota_hero_juggernaut" }] });
+  });
+});
+
 describe("upcoming skill", () => {
   it("says what to take at the next level when no point is waiting", async () => {
     const { upcomingSkill } = await import("../src/engine/skills.js");

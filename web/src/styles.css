@@ -461,3 +461,30 @@ button.link { background: none; border: 0; padding: 0; color: var(--gold); curso
 .ov-ai-head { display: flex; align-items: baseline; gap: 8px; }
 .ov-ai p { font-size: 12.5px; line-height: 1.4; color: rgb(231 224 204 / 0.92); }
 .ov-ai .ov-pending, .ov-ai .ov-age { font-size: 11px; }
+
+/* ── last 5 games ─────────────────────────────────────────────── */
+.recent { margin-top: var(--s3); }
+.recent-wl b { font: 600 16px var(--f-num); }
+.recent-wl .w { color: var(--radiant); }
+.recent-wl .l { color: var(--dire); }
+.recent-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.recent-list li { display: grid; grid-template-columns: 22px 24px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 6px; border-radius: 6px; background: var(--panel-2); }
+.recent-list li.won { box-shadow: inset 3px 0 0 var(--radiant); }
+.recent-list li.lost { box-shadow: inset 3px 0 0 var(--dire); }
+.recent-res { font: 700 14px var(--f-num); text-align: center; }
+.recent-list li.won .recent-res { color: var(--radiant); }
+.recent-list li.lost .recent-res { color: var(--dire); }
+.recent-list img, .recent-list .img-fallback { border-radius: 4px; }
+.recent-main strong { display: block; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.recent-main small, .recent-stats small { display: block; font-size: 11px; color: var(--muted); }
+.recent-stats { text-align: right; }
+.recent-stats b { font: 600 15px var(--f-num); font-variant-numeric: tabular-nums; }
+.recent-noicon { width: 24px; height: 24px; background: var(--line); border-radius: 4px; }
+.ov-recent { flex-direction: row; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ov-recent-g { display: inline-flex; align-items: center; gap: 2px; }
+.ov-recent-g img, .ov-recent-g .img-fallback { border-radius: 3px; }
+.ov-recent-g b { font: 700 11px var(--f-num); }
+.ov-recent-g.won b { color: var(--radiant); }
+.ov-recent-g.lost b { color: var(--dire); }
+.ov-recent-g.lost img { opacity: 0.6; }
+.ov-recent-sum { color: var(--muted); font-size: 11px; margin-left: 2px; }

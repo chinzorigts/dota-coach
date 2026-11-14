@@ -22,6 +22,7 @@ const SECTION_LABELS: Record<string, string> = {
   ai: "AI summary",
   benchmark: "You vs average",
   rank: "Rank / MMR",
+  recent: "Last 5 games (before a match)",
   draft: "Pick suggestions (draft)",
 };
 const TRIGGER_LABELS: [keyof SettingsT["ai"]["triggers"], string][] = [

@@ -446,3 +446,68 @@ export function getMatchups(heroId: number): Promise<Matchups | null> {
   }
   return p;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Your last few matches (hero, result, K/D/A, GPM/XPM, length) from /players/:id/recentMatches.
+// That endpoint is slow (~12s) and sometimes 500s, so results are cached for a few minutes.
+
+export interface RecentMatch {
+  matchId: number;
+  heroId: number;
+  won: boolean;
+  kills: number;
+  deaths: number;
+  assists: number;
+  gpm: number;
+  xpm: number;
+  lastHits: number;
+  durationSec: number;
+  startTime: number; // unix seconds
+  /** lobby_type 7 = ranked matchmaking */
+  ranked: boolean;
+}
+
+export function parseRecentMatches(raw: unknown, limit = 5): RecentMatch[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as Record<string, unknown>[])
+    .filter((m) => typeof m.radiant_win === "boolean" && typeof m.player_slot === "number")
+    .slice(0, limit)
+    .map((m) => ({
+      matchId: Number(m.match_id),
+      heroId: Number(m.hero_id),
+      won: (Number(m.player_slot) < 128) === m.radiant_win,
+      kills: Number(m.kills) || 0,
+      deaths: Number(m.deaths) || 0,
+      assists: Number(m.assists) || 0,
+      gpm: Number(m.gold_per_min) || 0,
+      xpm: Number(m.xp_per_min) || 0,
+      lastHits: Number(m.last_hits) || 0,
+      durationSec: Number(m.duration) || 0,
+      startTime: Number(m.start_time) || 0,
+      ranked: Number(m.lobby_type) === 7,
+    }));
+}
+
+const RECENT_TTL_MS = 5 * 60 * 1000;
+
+/** null = request failed or private profile; [] = no public matches */
+export async function getRecentMatches(accountId: number, fresh = false): Promise<RecentMatch[] | null> {
+  const file = path.join(config.cacheDir, "recent", `${accountId}.json`);
+  if (!fresh) {
+    try {
+      const stat = await fs.stat(file);
+      if (Date.now() - stat.mtimeMs < RECENT_TTL_MS) return JSON.parse(await fs.readFile(file, "utf8")) as RecentMatch[];
+    } catch {
+      /* no cache */
+    }
+  }
+  try {
+    const list = parseRecentMatches(await getJson(`/players/${accountId}/recentMatches`, 20000));
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify(list));
+    return list;
+  } catch (err) {
+    console.warn(`[opendota] recent matches for ${accountId} failed:`, (err as Error).message);
+    return null;
+  }
+}

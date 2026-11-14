@@ -8,6 +8,8 @@ import {
   getMatchups,
   getPlayerHeroTotals,
   getPlayerSummary,
+  getRecentMatches,
+  type RecentMatch,
   type HeroBenchmarks,
   type HeroStat,
   type ItemPopularity,
@@ -116,6 +118,9 @@ export class CoachState {
   /** When each item was last in the bag/stash; for items riding the courier (GSI can't see the courier) */
   private lastSeenAt = new Map<string, number>();
   private inTransit: string[] = [];
+  /** Your last 5 matches (OpenDota). Replaceable in tests. */
+  loadRecent: (accountId: number, fresh?: boolean) => Promise<RecentMatch[] | null> = getRecentMatches;
+  private recent: { accountId: number; data: RecentMatch[] | null | "loading" } | null = null;
   /** Draft data, loaded on first use. Replaceable in tests. */
   draftDeps = { loadHeroStats: getHeroStats, loadMatchups: getMatchups };
   private heroStats: Map<number, HeroStat> | null | "loading" | undefined;
@@ -349,6 +354,14 @@ export class CoachState {
   private loadMe(snap: GameSnapshot) {
     const accountId = snap.player?.accountId;
     if (!accountId || this.me?.accountId === accountId) return;
+    // Remember who we are, so rank and recent games show right after a restart, before Dota sends anything
+    this.settings.saveData("me.json", { accountId });
+    this.loadMeFor(accountId);
+  }
+
+  /** Called with the remembered account at startup (index.ts) and whenever GSI reports a new one */
+  loadMeFor(accountId: number) {
+    if (this.me?.accountId === accountId) return;
     const entry: { accountId: number; summary: PlayerSummary | null | "loading" } = { accountId, summary: "loading" };
     this.me = entry;
     this.loadPlayer(accountId)
@@ -358,6 +371,39 @@ export class CoachState {
         entry.summary = s;
         this.emit();
       });
+    this.loadRecentFor(accountId);
+  }
+
+  rememberedAccount(): number | null {
+    const raw = this.settings.loadData("me.json") as { accountId?: unknown } | null;
+    return typeof raw?.accountId === "number" && raw.accountId > 0 ? raw.accountId : null;
+  }
+
+  private loadRecentFor(accountId: number, fresh = false) {
+    const entry: { accountId: number; data: RecentMatch[] | null | "loading" } =
+      fresh && this.recent?.accountId === accountId ? this.recent : { accountId, data: "loading" };
+    this.recent = entry;
+    this.loadRecent(accountId, fresh)
+      .catch(() => null)
+      .then((d) => {
+        if (this.recent !== entry) return;
+        // A failed refresh keeps the list we already had
+        if (d !== null || entry.data === "loading") entry.data = d;
+        this.emit();
+      });
+  }
+
+  /** Your last 5 matches with hero names, for the dashboard and the pre-game overlay */
+  recentGames() {
+    const r = this.recent;
+    if (!r) return null;
+    if (r.data === "loading" || r.data === null) return { status: r.data === "loading" ? "loading" : "unavailable", matches: [] };
+    const matches = r.data.map((m) => {
+      const h = getHero(m.heroId);
+      return { ...m, hero: h?.name ?? null, heroName: h?.localizedName ?? `Hero ${m.heroId}` };
+    });
+    const wins = matches.filter((m) => m.won).length;
+    return { status: "ok", matches, wins, losses: matches.length - wins };
   }
 
   private rankHistory(): RankHistory {
@@ -386,6 +432,8 @@ export class CoachState {
       clearTimeout(this.meRefresh);
       this.meRefresh = setTimeout(() => this.refreshMe(accountId), ME_REFRESH_AFTER_GAME_MS);
       this.meRefresh.unref?.();
+      // The match usually shows up in recentMatches within a few minutes; check early too
+      setTimeout(() => this.loadRecentFor(accountId, true), 3 * 60 * 1000).unref?.();
     }
   }
 
@@ -393,6 +441,7 @@ export class CoachState {
 
   /** Fetch our profile again past the caches (medal and estimate change after games) */
   private refreshMe(accountId: number) {
+    this.loadRecentFor(accountId, true);
     this.loadPlayer(accountId, true)
       .catch(() => null)
       .then((s) => {
@@ -597,6 +646,7 @@ export class CoachState {
       benchmark: this.benchmark(),
       purchases: this.purchases,
       rank: this.rank(),
+      recentGames: this.recentGames(),
       draft: this.draft(),
       enemies: this.enemies,
       enemySource: this.enemySource,

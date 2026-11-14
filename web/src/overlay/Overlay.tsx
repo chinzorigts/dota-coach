@@ -7,6 +7,7 @@ import { bridge, type OverlayMode } from "./bridge";
 import { OpponentsPanel } from "./OpponentsPanel";
 import { StatsCompareCompact } from "../components/StatsCompare";
 import { RankLine } from "../components/RankCard";
+import { RecentGamesLine } from "../components/RecentGames";
 import { DraftCompact } from "../components/DraftPanel";
 
 /** What the game is doing before your hero is in, so "waiting" never looks like "can't see the game" */
@@ -129,6 +130,7 @@ export function Overlay() {
           {connected && state?.match && show("opponents") && <OpponentsPanel match={state.match} />}
           {connected && state?.draft && show("draft") && <DraftCompact draft={state.draft} />}
           {connected && state && show("rank") && <RankLine rank={state.rank} />}
+          {connected && state?.recentGames && show("recent") && <RecentGamesLine data={state.recentGames} />}
         </>
       ) : (
         <>

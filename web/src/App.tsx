@@ -14,6 +14,7 @@ import { StatsCompare } from "./components/StatsCompare";
 import { RankCard } from "./components/RankCard";
 import { DraftPanel } from "./components/DraftPanel";
 import { NeutralCard } from "./components/NeutralCard";
+import { RecentGames } from "./components/RecentGames";
 
 /** #settings opens the settings screen; plain hash routing keeps it linkable from the server log */
 function useHashRoute() {
@@ -54,7 +55,7 @@ export default function App() {
           {state && (
             <main className="grid pregame">
               {state.draft && <section className="col"><DraftPanel draft={state.draft} /></section>}
-              <section className="col"><RankCard rank={state.rank} /></section>
+              <section className="col"><RankCard rank={state.rank} />{state.recentGames && <RecentGames data={state.recentGames} />}</section>
             </main>
           )}
         </>
@@ -76,6 +77,7 @@ export default function App() {
               <AiPanel ai={state.ai} names={state.names} clockNow={s.clockTime} />
               <Timers timers={r.timers} alerts={r.alerts} />
               <RankCard rank={state.rank} />
+              {state.recentGames && <RecentGames data={state.recentGames} />}
             </section>
           </main>
           <EnemyPicker enemies={state.enemies} source={state.enemySource} detection={state.detection} rolePref={state.rolePref} role={r.role} />
