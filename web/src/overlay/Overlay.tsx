@@ -176,17 +176,25 @@ export function Overlay() {
             </div>
           )}
 
-          {show("ai") && state.ai.enabled && (state.ai.advice || state.ai.pending || state.ai.error) && (
-            <div className={`ov-ai ${state.ai.advice?.danger ?? ""}`}>
-              {state.ai.pending ? (
-                <p className="ov-pending">AI is thinking…</p>
-              ) : state.ai.error ? (
-                <p className="ov-err">{state.ai.error}</p>
-              ) : (
-                <p>{state.ai.advice!.summary}</p>
-              )}
-            </div>
-          )}
+          {show("ai") && state.ai.enabled && (() => {
+            // Advice is a snapshot of one moment. On the HUD it only stays while it still describes the game:
+            // up to 90 game-seconds (3 minutes for a question you asked), and never a death read once you're alive.
+            const a = state.ai.advice;
+            const age = a ? s.clockTime - a.clock : 0;
+            const fresh = a && age <= (a.reason === "manual" ? 180 : 90) && !(a.reason === "death" && s.hero!.alive && age > 5 && /\bdead\b|\bdied\b/i.test(a.summary));
+            if (!state.ai.pending && !state.ai.error && !fresh) return null;
+            return (
+              <div className={`ov-ai ${fresh ? a!.danger : ""}`}>
+                {state.ai.pending ? (
+                  <p className="ov-pending">AI is thinking…</p>
+                ) : state.ai.error ? (
+                  <p className="ov-err">{state.ai.error}</p>
+                ) : (
+                  <p>{a!.summary}{age >= 20 && <small className="ov-age"> · {clock(age)} ago</small>}</p>
+                )}
+              </div>
+            );
+          })()}
 
           {!locked && state.ai.enabled && (
             <form className="ov-ask" onSubmit={ask}>

@@ -16,7 +16,7 @@ export interface AiAdvice {
   question?: string;
 }
 
-export type TriggerReason = "hero" | "death" | "minute" | "enemies" | "purchase" | "manual";
+export type TriggerReason = "hero" | "death" | "respawn" | "minute" | "enemies" | "purchase" | "manual";
 
 /** What you bought instead of the suggestion, passed to the model so it can rebuild the plan */
 export interface PurchaseNote {
@@ -43,6 +43,8 @@ interface TriggerMemory {
   deaths: number;
   minuteBucket: number;
   lastCallAt: number;
+  /** Hero alive at the last update; a false -> true flip is a respawn */
+  alive?: boolean;
 }
 
 const BUCKET_SEC = 5 * 60;
@@ -54,8 +56,10 @@ export interface Triggers {
   enemies: boolean;
   /** Optional so older callers/tests keep working; off only when explicitly false */
   purchase?: boolean;
+  /** Fresh read the moment you respawn, so the HUD doesn't keep the advice from while you were dead */
+  respawn?: boolean;
 }
-const ALL_TRIGGERS: Triggers = { hero: true, death: true, periodic: true, enemies: true, purchase: true };
+const ALL_TRIGGERS: Triggers = { hero: true, death: true, periodic: true, enemies: true, purchase: true, respawn: true };
 /** Buying several things at the fountain shouldn't fire several requests */
 const PURCHASE_MIN_GAP_SEC = 20;
 
@@ -81,6 +85,7 @@ export function decideTrigger(
 
   if (mem.key !== key) return triggers.hero ? "hero" : null;
   if (triggers.death && s.player.deaths > mem.deaths && sinceLast >= 30) return "death";
+  if (triggers.respawn !== false && mem.alive === false && s.hero.alive && sinceLast >= 10) return "respawn";
   const bucket = Math.floor(Math.max(0, s.clockTime) / BUCKET_SEC);
   if (triggers.periodic && bucket > mem.minuteBucket && sinceLast >= minIntervalSec) return "minute";
   return null;
@@ -187,6 +192,8 @@ export class Advisor {
       if (this.mem.key !== key) {
         this.mem = { key, deaths: s.player.deaths, minuteBucket: Math.floor(Math.max(0, s.clockTime) / BUCKET_SEC), lastCallAt: 0 };
       }
+      // Alive/dead is tracked every update so a respawn is seen even when no call happened at the death
+      this.mem.alive = s.hero.alive;
     }
     if (!reason) return null;
     return this.request(reason, s, report, enemies);
@@ -225,6 +232,7 @@ export class Advisor {
       deaths: s.player?.deaths ?? this.mem.deaths,
       minuteBucket: Math.floor(Math.max(0, s.clockTime) / BUCKET_SEC),
       lastCallAt: this.now(),
+      alive: s.hero?.alive ?? this.mem.alive,
     };
     this.state = { ...this.state, pending: reason, error: null };
     this.emit();
