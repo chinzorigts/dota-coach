@@ -71,7 +71,7 @@ export default function App() {
               <SkillPanel snapshot={s} report={r} names={state.names} />
             </section>
             <section className="col col-side">
-              <AiPanel ai={state.ai} names={state.names} />
+              <AiPanel ai={state.ai} names={state.names} clockNow={s.clockTime} />
               <Timers timers={r.timers} alerts={r.alerts} />
               <RankCard rank={state.rank} />
             </section>

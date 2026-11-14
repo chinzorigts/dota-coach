@@ -29,6 +29,7 @@ const TRIGGER_LABELS: [keyof SettingsT["ai"]["triggers"], string][] = [
   ["periodic", "Every 5 minutes"],
   ["enemies", "When the enemy lineup changes"],
   ["purchase", "When I buy something other than the suggestion"],
+  ["respawn", "When I respawn"],
 ];
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };

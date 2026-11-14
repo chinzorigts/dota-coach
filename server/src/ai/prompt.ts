@@ -45,6 +45,7 @@ Rules:
 - rule_engine in the input is a stats- and rules-based recommendation. Follow it when you agree; when the enemy lineup or the situation calls for something better, change it and say why.
 - If the enemy list is empty, do not assume an enemy lineup; advise from the player's hero and situation.
 - If the player asked a question, answer it first in summary.
+- The answer is read over the next minute or two, not only at this instant. If the hero is dead (alive=false), don't say they are dead: say what to do once they respawn (what to buy with the gold they have, where to go, what to avoid), and mention buyback only if it clearly matters.
 - If off_plan_purchase is present, the player just bought something other than the suggestion. Respect that choice: build around the item they bought, drop what it replaced, and say in summary how the plan changes.
 - Do not state patch-specific numbers (exact cooldowns, damage) you are unsure of.`;
 
@@ -74,6 +75,7 @@ export function buildUserPayload(
       name: hero?.localizedName,
       level: s.hero.level,
       alive: s.hero.alive,
+      respawn_seconds: s.hero.alive ? undefined : s.hero.respawnSeconds,
       hp_pct: s.hero.healthPct,
       mana_pct: s.hero.manaPct,
       aghanims_scepter: s.hero.aghsScepter,

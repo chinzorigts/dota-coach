@@ -32,7 +32,7 @@ export interface Settings {
     liveModel: string;
     effort: Effort;
     autoIntervalSec: number;
-    triggers: { hero: boolean; death: boolean; periodic: boolean; enemies: boolean; purchase: boolean };
+    triggers: { hero: boolean; death: boolean; respawn: boolean; periodic: boolean; enemies: boolean; purchase: boolean };
   };
   coach: {
     defaultRole: "auto" | "core" | "support";
@@ -71,7 +71,7 @@ export function defaultSettings(): Settings {
       liveModel: "claude-sonnet-5-5",
       effort,
       autoIntervalSec: clamp(config.aiMinIntervalSec, 30, 600),
-      triggers: { hero: true, death: true, periodic: true, enemies: true, purchase: true },
+      triggers: { hero: true, death: true, respawn: true, periodic: true, enemies: true, purchase: true },
     },
     coach: {
       defaultRole: "auto",
@@ -124,7 +124,7 @@ export function mergeSettings(base: Settings, patch: unknown): Settings {
       liveModel: oneOf(ai.liveModel, MODELS.map((m) => m.id), (base.ai.liveModel ?? "claude-sonnet-5-5") as (typeof MODELS)[number]["id"]),
       effort: oneOf(ai.effort, EFFORTS, base.ai.effort),
       autoIntervalSec: num(ai.autoIntervalSec, base.ai.autoIntervalSec, 30, 600, 5),
-      triggers: flags(ai.triggers, ["hero", "death", "periodic", "enemies", "purchase"] as const, base.ai.triggers),
+      triggers: flags(ai.triggers, ["hero", "death", "respawn", "periodic", "enemies", "purchase"] as const, base.ai.triggers),
     },
     coach: {
       defaultRole: oneOf(coach.defaultRole, ["auto", "core", "support"] as const, base.coach.defaultRole),

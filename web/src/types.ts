@@ -45,7 +45,7 @@ export interface AiAdvice {
   tips: string[];
   at: number;
   clock: number;
-  reason: "hero" | "death" | "minute" | "enemies" | "purchase" | "manual";
+  reason: "hero" | "death" | "respawn" | "minute" | "enemies" | "purchase" | "manual";
   question?: string;
 }
 
@@ -86,7 +86,7 @@ export interface Settings {
     liveModel: string;
     effort: "low" | "medium" | "high";
     autoIntervalSec: number;
-    triggers: { hero: boolean; death: boolean; periodic: boolean; enemies: boolean; purchase: boolean };
+    triggers: { hero: boolean; death: boolean; respawn: boolean; periodic: boolean; enemies: boolean; purchase: boolean };
   };
   coach: {
     defaultRole: "auto" | "core" | "support";

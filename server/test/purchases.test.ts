@@ -14,6 +14,21 @@ const rec = (key: string, source: ItemRec["source"] = "meta"): ItemRec => {
   return { key, name: it.name, img: it.img, cost: it.cost, remaining: it.cost, affordable: false, reason: "", source, priority: 50 };
 };
 
+describe("respawn trigger", () => {
+  it("asks again the moment the hero respawns", async () => {
+    const { decideTrigger } = await import("../src/ai/advisor.js");
+    const alive = normalize(rawGame({ alive: true }));
+    const key = `${alive.matchId}:${alive.hero!.name}`;
+    const mem = { key, deaths: alive.player!.deaths, minuteBucket: 2, lastCallAt: 0, alive: false };
+    expect(decideTrigger(mem, alive, 60_000, 90)).toBe("respawn");
+    // Still dead, or was alive already: nothing
+    expect(decideTrigger({ ...mem, alive: true }, alive, 60_000, 90)).toBeNull();
+    expect(decideTrigger(mem, normalize(rawGame({ alive: false })), 60_000, 90)).toBeNull();
+    // Off in settings
+    expect(decideTrigger(mem, alive, 60_000, 90, { hero: true, death: true, periodic: true, enemies: true, respawn: false })).toBeNull();
+  });
+});
+
 describe("purchase detection", () => {
   it("finds new items by count and ignores consumables", () => {
     expect(newItems(["bracer"], ["bracer", "bracer", "tango", "tpscroll"])).toEqual(["bracer"]);

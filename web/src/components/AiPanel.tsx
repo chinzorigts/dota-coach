@@ -10,11 +10,12 @@ const REASON: Record<string, string> = {
   minute: "5-minute check",
   enemies: "Enemy lineup update",
   purchase: "Re-planned after your buy",
+  respawn: "After respawn",
   manual: "Your question",
 };
 const DANGER: Record<string, string> = { low: "Stable", medium: "Careful", high: "Danger" };
 
-export function AiPanel({ ai, names }: { ai: CoachState["ai"]; names: CoachState["names"] }) {
+export function AiPanel({ ai, names, clockNow }: { ai: CoachState["ai"]; names: CoachState["names"]; clockNow?: number }) {
   const [q, setQ] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
@@ -66,8 +67,9 @@ export function AiPanel({ ai, names }: { ai: CoachState["ai"]; names: CoachState
               ))}
             </div>
           )}
-          <small className="meta">
+          <small className={`meta ${clockNow !== undefined && clockNow - a.clock > 90 ? "stale" : ""}`}>
             {REASON[a.reason]}, at {clock(a.clock)}
+            {clockNow !== undefined && clockNow - a.clock >= 20 ? ` (${clock(clockNow - a.clock)} ago)` : ""}
             {ai.lastMs ? ` · answered in ${(ai.lastMs / 1000).toFixed(1)}s` : ""}
           </small>
         </>

@@ -381,3 +381,5 @@ button.link { background: none; border: 0; padding: 0; color: var(--gold); curso
 .ov-skill-order small { color: var(--muted); font-size: 10px; margin-left: 4px; }
 .skill-upcoming { margin: var(--s2) 0 0; font-size: 13px; color: var(--muted); }
 .skill-upcoming strong { color: var(--text); font-weight: 500; }
+.ov-age { color: var(--muted); font-size: 11px; }
+.ai .meta.stale { color: var(--warn); }
