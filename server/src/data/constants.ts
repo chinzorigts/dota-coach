@@ -99,6 +99,25 @@ export function getItem(key: string): ItemInfo | undefined {
 
 export const itemKeyById = (id: number | string): string | undefined => itemIds[String(id)];
 
+/** key -> items that list it as a direct component (built once, on first use) */
+let builtFromIndex: Map<string, string[]> | null = null;
+
+/** Items you can build that use `key` as a direct part (e.g. ogre_axe -> black_king_bar, ...) */
+export function itemsBuiltFrom(key: string): string[] {
+  if (!builtFromIndex) {
+    builtFromIndex = new Map();
+    for (const [k, it] of Object.entries(items)) {
+      if (k.startsWith("recipe_") || !it.components?.length || (it.cost ?? 0) <= 0) continue;
+      for (const c of new Set(it.components)) {
+        const list = builtFromIndex.get(c) ?? [];
+        list.push(k);
+        builtFromIndex.set(c, list);
+      }
+    }
+  }
+  return builtFromIndex.get(key) ?? [];
+}
+
 /** Neutral items of one tier (1..5) in the installed dotaconstants, i.e. the current patch's list */
 export function neutralItemsOfTier(tier: number): { key: string; name: string }[] {
   return Object.entries(items)

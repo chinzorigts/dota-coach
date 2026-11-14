@@ -215,15 +215,17 @@ export function createApp(
   const send = (ws: WebSocket) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "state", data: state }));
   wss.on("connection", (ws) => send(ws));
 
-  // GSI can burst every 0.1s; push to browsers at most 4 times per second
+  // GSI can burst every 0.1s; push to browsers at most 10 times per second (a purchase shows within ~0.2s).
+  // The state is serialized once per push, not once per client.
   let scheduled = false;
   state.onChange(() => {
     if (scheduled) return;
     scheduled = true;
     setTimeout(() => {
       scheduled = false;
-      for (const ws of wss.clients) send(ws);
-    }, 250);
+      const msg = JSON.stringify({ type: "state", data: state });
+      for (const ws of wss.clients) if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+    }, 100);
   });
 
   return { server, wss };

@@ -10,8 +10,8 @@ export function buildCfg(uri: string, token: string): string {
 {
   "uri"       "${uri}"
   "timeout"   "5.0"
-  "buffer"    "0.1"
-  "throttle"  "0.5"
+  "buffer"    "0.05"
+  "throttle"  "0.1"
   "heartbeat" "30.0"
   "data"
   {

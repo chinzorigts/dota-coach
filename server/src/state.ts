@@ -27,6 +27,9 @@ import { ownedItems } from "./engine/items.js";
  */
 export const GSI_STALE_MS = 75_000;
 
+/** A courier trip from fountain to lane rarely takes longer than this */
+const TRANSIT_MS = 90_000;
+
 /** OpenDota usually has a finished match parsed within ~20 minutes */
 const ME_REFRESH_AFTER_GAME_MS = 20 * 60 * 1000;
 
@@ -110,6 +113,9 @@ export class CoachState {
   /** Most copies of each item seen this match. Items riding the courier vanish from GSI for a while, so a
    * purchase is a count going above this, not merely an item reappearing. */
   private maxSeen = new Map<string, number>();
+  /** When each item was last in the bag/stash; for items riding the courier (GSI can't see the courier) */
+  private lastSeenAt = new Map<string, number>();
+  private inTransit: string[] = [];
   /** Draft data, loaded on first use. Replaceable in tests. */
   draftDeps = { loadHeroStats: getHeroStats, loadMatchups: getMatchups };
   private heroStats: Map<number, HeroStat> | null | "loading" | undefined;
@@ -165,6 +171,8 @@ export class CoachState {
       this.purchases = [];
       this.skipped.clear();
       this.maxSeen.clear();
+      this.lastSeenAt.clear();
+      this.inTransit = [];
     }
 
     if (snap.hero && snap.hero.id !== this.popularityHero) {
@@ -259,6 +267,19 @@ export class CoachState {
     };
   }
 
+  /**
+   * An item that was in your bag/stash a moment ago and isn't now is most likely on the courier (GSI doesn't list
+   * it). Count it as owned for up to TRANSIT_MS so it isn't suggested again mid-delivery, unless it went into
+   * something you just built (then it's a used-up part, not a missing item).
+   */
+  private trackTransit(owned: string[], now: number) {
+    for (const k of owned) this.lastSeenAt.set(k, now);
+    const builtParts = new Set(owned.flatMap((k) => getItem(k)?.components ?? []));
+    this.inTransit = [...this.lastSeenAt]
+      .filter(([k, at]) => !owned.includes(k) && now - at < TRANSIT_MS && !builtParts.has(k))
+      .map(([k]) => k);
+  }
+
   /** Forget the last game once GSI has gone quiet (called on a timer by index.ts). Returns true when it cleared. */
   expireIfStale(now = Date.now()): boolean {
     if (!this.snapshot || now - this.lastGsiAt < GSI_STALE_MS) return false;
@@ -274,6 +295,7 @@ export class CoachState {
     const owned = ownedItems(snap);
     const counts = new Map<string, number>();
     for (const k of owned) counts.set(k, (counts.get(k) ?? 0) + 1);
+    this.trackTransit(owned, snap.receivedAt);
     // The first snapshot of a match (or a mid-game restart) is the starting inventory, not a purchase
     const first = this.maxSeen.size === 0;
     const seenList = [...this.maxSeen].flatMap(([k, n]) => Array<string>(n).fill(k));
@@ -556,6 +578,7 @@ export class CoachState {
       enemies: this.enemies,
       ai: advice ? { items: advice.next_items, skillPriority: advice.skill_priority, neutral: advice.neutral } : null,
       skipped: [...this.skipped],
+      inTransit: this.inTransit,
       prefs: (() => {
         const c = this.settings.get().coach;
         return { lowHpPct: c.lowHpPct, goldAlert: c.goldAlert, timers: c.timers };

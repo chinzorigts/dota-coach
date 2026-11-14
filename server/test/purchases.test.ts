@@ -67,6 +67,24 @@ describe("purchase detection", () => {
     expect(recs.map((r) => r.key)).toContain("magic_wand");
   });
 
+  it("suggests what a bought part builds into, preferring the hero's popular items", () => {
+    // Ogre Axe bought while the list was about Blink and Maelstrom: BKB isn't suggested for this phase, but it's
+    // the hero's popular late item that uses Ogre Axe, so it comes in as "builds from your Ogre Axe"
+    const s = normalize(rawGame({ items: ["ogre_axe"], gold: 0 }));
+    const recs = recommendItems(s, { role: "core", popularity: { start: [], early: ["blink"], mid: ["maelstrom"], late: ["black_king_bar"] }, enemies: [], aiItems: [] });
+    const bkb = recs.find((r) => r.key === "black_king_bar");
+    expect(bkb?.reason).toMatch(/Builds from your Ogre Axe/);
+    // Without popularity data it still finds something Ogre Axe builds into
+    const any = recommendItems(s, { role: "core", popularity: null, enemies: [], aiItems: [] });
+    expect(any.some((r) => getItem(r.key)?.components.includes("ogre_axe"))).toBe(true);
+  });
+
+  it("keeps items riding the courier counted as owned", () => {
+    const s = normalize(rawGame({ items: ["power_treads"] }));
+    const recs = recommendItems(s, { role: "core", popularity: { start: [], early: ["blink", "black_king_bar"], mid: [], late: [] }, enemies: [], aiItems: [], inTransit: ["blink"] });
+    expect(recs.map((r) => r.key)).not.toContain("blink");
+  });
+
   it("stops suggesting other boots once upgraded boots are owned", () => {
     const s = normalize(rawGame({ items: ["phase_boots"] }));
     const recs = recommendItems(s, { role: "core", popularity: { start: [], early: ["power_treads", "blink"], mid: [], late: [] }, enemies: [], aiItems: [] });

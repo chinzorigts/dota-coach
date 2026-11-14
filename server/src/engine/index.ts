@@ -15,6 +15,8 @@ export interface EngineContext {
   ai: { items: { item: string; reason: string }[]; skillPriority: string[]; neutral?: { item: string; reason: string } | null } | null;
   /** Recommendations replaced by a different purchase this match */
   skipped?: string[];
+  /** Items on the courier right now (seen moments ago, not in GSI this update) */
+  inTransit?: string[];
   /** From the settings screen; defaults apply when absent */
   prefs?: AlertPrefs & { timers: Record<string, boolean> };
 }
@@ -27,6 +29,7 @@ export function buildReport(s: GameSnapshot, ctx: EngineContext): CoachReport {
     enemies: ctx.enemies,
     aiItems: ctx.ai?.items ?? [],
     skipped: ctx.skipped,
+    inTransit: ctx.inTransit,
   });
   const skills = { ...recommendSkill(s, ctx.ai?.skillPriority ?? null), upcoming: upcomingSkill(s, ctx.ai?.skillPriority ?? null) };
   const p = s.player;

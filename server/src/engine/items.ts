@@ -1,5 +1,5 @@
 import type { GameSnapshot } from "../gsi/normalize.js";
-import { getHero, getItem, remainingCost } from "../data/constants.js";
+import { getHero, getItem, itemsBuiltFrom, remainingCost } from "../data/constants.js";
 import type { ItemPopularity } from "../data/opendota.js";
 import { matchCounters } from "./counters.js";
 import { isBootsUpgrade } from "./purchases.js";
@@ -53,10 +53,12 @@ interface ItemContext {
   aiItems: { item: string; reason: string }[];
   /** Recommendations made redundant by what you bought instead (see purchases.ts) */
   skipped?: string[];
+  /** Items you had moments ago that GSI doesn't show right now (riding the courier); still yours */
+  inTransit?: string[];
 }
 
 export function recommendItems(s: GameSnapshot, ctx: ItemContext): ItemRec[] {
-  const owned = ownedItems(s);
+  const owned = [...ownedItems(s), ...(ctx.inTransit ?? [])];
   const gold = s.player?.gold ?? 0;
   const phase = phaseOf(s.clockTime);
   const recs = new Map<string, ItemRec>();
@@ -135,6 +137,23 @@ export function recommendItems(s: GameSnapshot, ctx: ItemContext): ItemRec[] {
   if (ctx.role === "support" && s.clockTime > 0) {
     const wards = owned.includes("ward_observer") || owned.includes("ward_dispenser");
     if (!wards) add("ward_observer", "No wards. Get vision up", "rule", 55);
+  }
+
+  // 6) Parts you bought for something that isn't on the list: suggest what they build into.
+  // A part is "loose" when nothing you own or anything already suggested uses it. Prefer what's popular on
+  // this hero, then the cheapest finish; the in-progress boost below then moves it up.
+  const popularOrder = ctx.popularity ? [...ctx.popularity.early, ...ctx.popularity.mid, ...ctx.popularity.late] : [];
+  const usedBy = (part: string, keys: Iterable<string>) => [...keys].some((k) => getItem(k)?.components.includes(part));
+  for (const part of new Set(owned)) {
+    const it = getItem(part);
+    if (!it || NOISE.has(part) || it.consumable || part === "boots" || isBootsUpgrade(part)) continue;
+    const builds = itemsBuiltFrom(part).filter((k) => !NOISE.has(k) && !hasEffectively(k, owned) && getItem(k));
+    if (!builds.length) continue; // a finished item, not a part
+    if (usedBy(part, owned) || usedBy(part, recs.keys())) continue;
+    const pick =
+      popularOrder.find((k) => builds.includes(k)) ??
+      [...builds].sort((a, b) => remainingCost(a, owned) - remainingCost(b, owned))[0];
+    add(pick, `Builds from your ${it.name}`, "meta", 56);
   }
 
   // Finish what you've started: an item whose parts you already hold (e.g. Staff + Blade + Ogre Axe toward
