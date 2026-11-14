@@ -1,0 +1,14 @@
+{
+  "name": "@dota-coach/overlay",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Transparent always-on-top overlay window for Dota Coach",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "electron": "^45.3.2"
+  }
+}

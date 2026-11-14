@@ -12,7 +12,7 @@ import { Waiting } from "./components/Waiting";
 
 export default function App() {
   const { state, connected, serverNow } = useCoach();
-  // 마지막 GSI 이후 몇 초 지났는지 화면이 스스로 갱신하도록 1초마다 다시 그린다
+  // Re-render every second so 'last GSI received' ages on its own
   const [, tick] = useState(0);
   useEffect(() => {
     const t = window.setInterval(() => tick((n) => n + 1), 1000);

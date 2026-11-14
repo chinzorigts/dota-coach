@@ -2,17 +2,24 @@
   "name": "dota-coach",
   "private": true,
   "version": "0.1.0",
-  "description": "Dota 2 실시간 코치 — GSI 기반 분석 + 아이템/스킬 추천 + Claude 조언",
-  "workspaces": ["server", "web"],
+  "description": "Real-time Dota 2 coach: GSI-based analysis, item/skill recommendations and Claude advice",
+  "workspaces": [
+    "server",
+    "web",
+    "overlay"
+  ],
   "scripts": {
     "dev:server": "npm run dev -w server",
     "dev:web": "npm run dev -w web",
     "build": "npm run build -w web && npm run build -w server",
     "start": "npm run start -w server",
+    "overlay": "npm run build -w web && npm start -w overlay",
     "mock": "npm run mock -w server",
     "install-cfg": "npm run install-cfg -w server",
     "test": "npm test -w server",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w web"
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web && npm run typecheck -w overlay"
   },
-  "engines": { "node": ">=20.12" }
+  "engines": {
+    "node": ">=20.12"
+  }
 }

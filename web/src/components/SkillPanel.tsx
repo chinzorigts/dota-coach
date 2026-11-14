@@ -5,14 +5,14 @@ import { abilityImg } from "../format";
 export function SkillPanel({ snapshot, report, names }: { snapshot: Snapshot; report: Report; names: { abilities: Record<string, string> } }) {
   const next = report.skills.next;
   const order = report.skills.priority;
-  // 타고난(innate) 스킬은 찍을 수 없으니 뺀다 — 우선순위 목록 = 찍을 수 있는 일반 스킬
+  // Innate abilities can't be leveled; the priority list holds the levelable basic abilities
   const abilities = snapshot.abilities.filter((a) => a.ultimate || order.includes(a.name));
 
   return (
     <div className="panel">
       <h3>
-        스킬
-        <span className="sub">{report.skills.prioritySource === "ai" ? "AI 우선순위" : "기본 우선순위"}</span>
+        Skills
+        <span className="sub">{report.skills.prioritySource === "ai" ? "AI priority" : "Default priority"}</span>
       </h3>
       <ul className="skills">
         {abilities.map((a) => {
@@ -23,11 +23,11 @@ export function SkillPanel({ snapshot, report, names }: { snapshot: Snapshot; re
               <Img src={abilityImg(a.name)} label={names.abilities[a.name] ?? a.name} width={40} height={40} />
               <div>
                 <strong>{names.abilities[a.name]}</strong>
-                <div className="pips" aria-label={`${a.level} / ${max} 레벨`}>
+                <div className="pips" aria-label={`Level ${a.level} of ${max}`}>
                   {Array.from({ length: max }, (_, i) => <i key={i} className={i < a.level ? "on" : ""} />)}
                 </div>
               </div>
-              <span className="rank">{a.ultimate ? "궁" : rank >= 0 ? `${rank + 1}순위` : ""}</span>
+              <span className="rank">{a.ultimate ? "Ult" : rank >= 0 ? `#${rank + 1}` : ""}</span>
             </li>
           );
         })}

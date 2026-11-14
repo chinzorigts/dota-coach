@@ -1,5 +1,5 @@
-// 실제 게임 없이 대시보드를 확인하기 위한 가짜 GSI 송신기.
-// 사용: npm run mock [-- --speed 30 --hero npc_dota_hero_juggernaut]
+// Fake GSI sender for checking the dashboard without a real game.
+// Usage: npm run mock [-- --speed 30 --hero npc_dota_hero_juggernaut]
 import { config } from "../config.js";
 import { getHeroAbilities, getAbility } from "../data/constants.js";
 import type { RawGsi } from "../gsi/types.js";
@@ -10,7 +10,7 @@ const arg = (name: string, d: string) => {
   return i >= 0 && args[i + 1] ? args[i + 1] : d;
 };
 
-const speed = Number(arg("speed", "20")); // 실제 1초 = 게임 N초
+const speed = Number(arg("speed", "20")); // 1 real second = N game seconds
 const heroName = arg("hero", "npc_dota_hero_juggernaut");
 const heroId = Number(arg("hero-id", "8"));
 const target = arg("url", `http://127.0.0.1:${config.port}/gsi`);
@@ -20,18 +20,18 @@ const abilities = (getHeroAbilities(heroName)?.abilities ?? []).filter(
 );
 const ultIndex = abilities.length - 1;
 
-// 시간순으로 구매할 아이템 (게임 초, 키)
+// Items bought over time (game seconds, key)
 const PURCHASES: [number, string][] = [
   [-80, "tango"], [-80, "quelling_blade"], [-80, "branches"], [-80, "branches"],
   [240, "magic_wand"], [420, "boots"], [600, "power_treads"],
   [900, "mjollnir"], [1500, "black_king_bar"], [2100, "manta"],
 ];
-// 이 시각들에 죽는다
+// Die at these times
 const DEATHS = [540, 1260, 1980];
 
 function stateAt(clock: number): RawGsi {
   const level = Math.max(1, Math.min(25, Math.floor(1 + Math.sqrt(Math.max(0, clock)) / 2.2)));
-  // 일부러 스킬 포인트 하나를 남겨 둬서 "스킬 찍기" 경고를 볼 수 있게 한다
+  // Leave one ability point unspent on purpose so the "level a skill" prompt shows
   let points = Math.max(0, level - 1);
   const levels = abilities.map(() => 0);
   const ultCap = level >= 18 ? 3 : level >= 12 ? 2 : level >= 6 ? 1 : 0;
@@ -45,7 +45,7 @@ function stateAt(clock: number): RawGsi {
   }
 
   const owned = PURCHASES.filter(([t]) => clock >= t).map(([, k]) => k);
-  // 상위 아이템을 사면 부품은 사라진다 — 단순화를 위해 신발만 정리
+  // Building an item consumes its parts; simplified to boots plus starter items
   const STARTERS = ["tango", "branches", "quelling_blade"];
   const inv = owned.filter(
     (k) => !(k === "boots" && owned.includes("power_treads")) && !(clock > 600 && STARTERS.includes(k)),
@@ -58,7 +58,7 @@ function stateAt(clock: number): RawGsi {
   const items: RawGsi["items"] = {};
   for (let i = 0; i < 9; i++) items[`slot${i}`] = { name: inv[i] ? `item_${inv[i]}` : "empty" };
   for (let i = 0; i < 6; i++) items[`stash${i}`] = { name: "empty" };
-  // 15분 이후엔 TP 를 깜빡한 상황
+  // After 15 minutes, simulate a forgotten TP
   items["teleport0"] = { name: clock < 900 ? "item_tpscroll" : "empty", charges: 1 };
   items["neutral0"] = { name: "empty" };
 
@@ -121,15 +121,15 @@ function stateAt(clock: number): RawGsi {
 }
 
 let clock = Number(arg("start", "-90"));
-console.log(`가짜 게임 송신 → ${target} (${heroName}, x${speed} 속도). Ctrl+C 로 종료`);
+console.log(`Sending fake game to ${target} (${heroName}, x${speed} speed). Ctrl+C to stop`);
 setInterval(async () => {
   clock += speed * 0.5;
   try {
     const res = await fetch(target, { method: "POST", body: JSON.stringify(stateAt(clock)) });
-    if (!res.ok) console.error(`서버 응답 ${res.status}`);
+    if (!res.ok) console.error(`Server responded ${res.status}`);
   } catch {
-    console.error("서버에 연결할 수 없습니다 — npm run dev:server 가 켜져 있나요?");
+    console.error("Cannot reach the server. Is npm start (or npm run dev:server) running?");
   }
-  if (Math.floor(clock) % 60 === 0) process.stdout.write(`\r게임 시계 ${Math.floor(clock / 60)}분   `);
+  if (Math.floor(clock) % 60 === 0) process.stdout.write(`\rGame clock ${Math.floor(clock / 60)} min   `);
 }, 500);
 

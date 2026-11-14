@@ -5,13 +5,13 @@ import { Img } from "./Img";
 import { post } from "../useCoach";
 
 const REASON: Record<string, string> = {
-  hero: "게임 시작 분석",
-  death: "사망 후 분석",
-  minute: "5분 정기 분석",
-  enemies: "적 조합 반영",
-  manual: "질문에 대한 답",
+  hero: "Opening read",
+  death: "After death",
+  minute: "5-minute check",
+  enemies: "Enemy lineup update",
+  manual: "Your question",
 };
-const DANGER: Record<string, string> = { low: "안정", medium: "주의", high: "위험" };
+const DANGER: Record<string, string> = { low: "Stable", medium: "Careful", high: "Danger" };
 
 export function AiPanel({ ai, names }: { ai: CoachState["ai"]; names: CoachState["names"] }) {
   const [q, setQ] = useState("");
@@ -31,8 +31,8 @@ export function AiPanel({ ai, names }: { ai: CoachState["ai"]; names: CoachState
   if (!ai.enabled) {
     return (
       <div className="panel ai off">
-        <h3>AI 코치</h3>
-        <p>꺼져 있습니다. 저장소 루트의 <code>.env</code> 에 <code>ANTHROPIC_API_KEY</code> 를 넣고 서버를 다시 켜면 상황 분석과 질문 답변이 켜집니다. 지금 보이는 추천은 규칙·통계 엔진입니다.</p>
+        <h3>AI coach</h3>
+        <p>Off. Add <code>ANTHROPIC_API_KEY</code> to <code>.env</code> at the repo root and restart the server to turn on situational analysis and questions. The picks you see now come from the rules and stats engine.</p>
       </div>
     );
   }
@@ -41,10 +41,10 @@ export function AiPanel({ ai, names }: { ai: CoachState["ai"]; names: CoachState
   return (
     <div className="panel ai" aria-live="polite">
       <h3>
-        AI 코치
+        AI coach
         {a && <span className={`danger ${a.danger}`}>{DANGER[a.danger]}</span>}
       </h3>
-      {ai.pending && <p className="pending">분석 중… ({REASON[ai.pending]})</p>}
+      {ai.pending && <p className="pending">Analyzing… ({REASON[ai.pending]})</p>}
       {ai.error && <p className="error">{ai.error}</p>}
       {a ? (
         <>
@@ -65,21 +65,21 @@ export function AiPanel({ ai, names }: { ai: CoachState["ai"]; names: CoachState
               ))}
             </div>
           )}
-          <small className="meta">{REASON[a.reason]} · 게임 시간 {clock(a.clock)}</small>
+          <small className="meta">{REASON[a.reason]}, at {clock(a.clock)}</small>
         </>
       ) : (
-        !ai.pending && <p className="muted">영웅이 정해지면 첫 분석을 시작합니다.</p>
+        !ai.pending && <p className="muted">The first read starts once your hero is locked in.</p>
       )}
       <form onSubmit={ask} className="ask">
-        <label htmlFor="ask-q" className="sr-only">AI 에게 질문</label>
+        <label htmlFor="ask-q" className="sr-only">Ask the AI coach</label>
         <input
           id="ask-q"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="예: 지금 BKB 가요, 블링크 가요?"
+          placeholder="e.g. BKB or Blink next?"
           maxLength={500}
         />
-        <button type="submit" disabled={Boolean(ai.pending)}>물어보기</button>
+        <button type="submit" disabled={Boolean(ai.pending)}>Ask</button>
       </form>
       {err && <p className="error">{err}</p>}
     </div>

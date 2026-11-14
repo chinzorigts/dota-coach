@@ -1,5 +1,5 @@
-// Valve Game State Integration 원본 페이로드 (필요한 필드만, 전부 optional).
-// 플레이 중에는 "내 영웅" 정보만 온다. 관전 모드에서는 team2/team3 아래로 10명이 온다.
+// Raw Valve Game State Integration payload (only fields we use, all optional).
+// While playing you only get your own hero. Spectating sends all 10 under team2/team3.
 
 export interface RawAbility {
   name?: string;

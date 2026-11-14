@@ -9,9 +9,9 @@ const report = (s: ReturnType<typeof normalize>) =>
   buildReport(s, { rolePref: "auto", popularity: null, enemies: [], ai: null });
 
 const fakeAdvice = {
-  summary: "라인 유지", danger: "low" as const,
-  next_items: [{ item: "black_king_bar", reason: "마법 딜" }, { item: "not_a_real_item", reason: "환각" }],
-  skill_priority: ["juggernaut_blade_fury"], tips: ["와드 확인"],
+  summary: "Hold the lane", danger: "low" as const,
+  next_items: [{ item: "black_king_bar", reason: "magic damage" }, { item: "not_a_real_item", reason: "hallucinated" }],
+  skill_priority: ["juggernaut_blade_fury"], tips: ["Check wards"],
 };
 
 describe("decideTrigger", () => {
@@ -45,7 +45,7 @@ describe("Advisor", () => {
     expect(adv.reason).toBe("hero");
     expect(adv.next_items.map((i) => i.item)).toEqual(["black_king_bar"]);
     expect(call).toHaveBeenCalledTimes(1);
-    // 같은 상태가 다시 와도 또 부르지 않는다
+    // The same state arriving again does not re-trigger
     expect(a.onSnapshot(s, report(s), [])).toBeNull();
   });
 
@@ -67,10 +67,10 @@ describe("Advisor", () => {
     let seen: any;
     const a = new Advisor({ enabled: true, model: "m", minIntervalSec: 90, call: async (p) => { seen = p; return fakeAdvice; } });
     const s = normalize(rawGame());
-    await a.ask(s, report(s), ["npc_dota_hero_lion"], "BKB 언제 사요?");
-    expect(seen.question).toBe("BKB 언제 사요?");
+    await a.ask(s, report(s), ["npc_dota_hero_lion"], "When should I buy BKB?");
+    expect(seen.question).toBe("When should I buy BKB?");
     expect(seen.enemies[0].name).toBe("Lion");
-    expect(a.status().advice?.question).toBe("BKB 언제 사요?");
+    expect(a.status().advice?.question).toBe("When should I buy BKB?");
   });
 });
 

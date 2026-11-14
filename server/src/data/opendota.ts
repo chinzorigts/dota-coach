@@ -1,5 +1,5 @@
-// OpenDota: 영웅별 아이템 인기도(실제 매치 통계). 사용자 PC 에서 호출되며 결과는 디스크에 24시간 캐시한다.
-// 실패하면 null — 엔진은 역할 기반 기본 빌드로 떨어진다.
+// OpenDota: per-hero item popularity (real match stats). Called from the user's PC, cached on disk for 24h.
+// Returns null on failure; the engine falls back to role-based default builds.
 import fs from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
@@ -40,7 +40,7 @@ async function load(heroId: number): Promise<ItemPopularity | null> {
       return parsePopularity(JSON.parse(await fs.readFile(file, "utf8")));
     }
   } catch {
-    /* 캐시 없음 */
+    /* no cache */
   }
   try {
     const res = await fetch(`${config.opendotaBase}/heroes/${heroId}/itemPopularity`, {
@@ -52,7 +52,7 @@ async function load(heroId: number): Promise<ItemPopularity | null> {
     await fs.writeFile(file, JSON.stringify(raw));
     return parsePopularity(raw);
   } catch (err) {
-    console.warn(`[opendota] hero ${heroId} 인기 아이템 조회 실패 — 기본 빌드 사용:`, (err as Error).message);
+    console.warn(`[opendota] item popularity for hero ${heroId} failed, using default build:`, (err as Error).message);
     return null;
   }
 }
@@ -62,7 +62,7 @@ export function getItemPopularity(heroId: number): Promise<ItemPopularity | null
   if (!p) {
     p = load(heroId);
     memo.set(heroId, p);
-    // 실패는 다음 번에 다시 시도할 수 있게 메모에서 뺀다
+    // Drop failures from the memo so the next call retries
     p.then((v) => v === null && memo.delete(heroId));
   }
   return p;

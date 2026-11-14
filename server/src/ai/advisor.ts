@@ -11,7 +11,7 @@ export interface AiAdvice {
   skill_priority: string[];
   tips: string[];
   at: number; // Date.now()
-  clock: number; // 게임 시계
+  clock: number; // game clock
   reason: TriggerReason;
   question?: string;
 }
@@ -26,7 +26,7 @@ export interface AdvisorStatus {
   advice: AiAdvice | null;
 }
 
-/** 실제 API 호출. 테스트에서는 가짜로 바꿔 끼운다. */
+/** The actual API call. Tests swap in a fake. */
 export type AdviceCaller = (payload: unknown) => Promise<Omit<AiAdvice, "at" | "clock" | "reason" | "question">>;
 
 interface TriggerMemory {
@@ -38,7 +38,7 @@ interface TriggerMemory {
 
 const BUCKET_SEC = 5 * 60;
 
-/** 자동 호출 여부만 판단하는 순수 함수 (쓰로틀 포함) */
+/** Pure function deciding whether to auto-call (includes throttling) */
 export function decideTrigger(
   mem: TriggerMemory,
   s: GameSnapshot,
@@ -62,7 +62,7 @@ export function makeClaudeCaller(model: string, effort: "low" | "medium" | "high
     const response = await client.beta.messages.create({
       model,
       max_tokens: 8000,
-      // 안전 분류기가 거절하면 서버가 다른 모델로 다시 돌린다
+      // If a safety classifier declines, the API re-runs on a fallback model
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       output_config: { effort, format: { type: "json_schema", schema: ADVICE_SCHEMA } },
@@ -70,10 +70,10 @@ export function makeClaudeCaller(model: string, effort: "low" | "medium" | "high
       messages: [{ role: "user", content: JSON.stringify(payload) }],
     });
     if (response.stop_reason === "refusal") {
-      throw new Error("모델이 응답을 거절했습니다");
+      throw new Error("The model declined to answer");
     }
     if (response.stop_reason === "max_tokens") {
-      throw new Error("응답이 잘렸습니다 (max_tokens)");
+      throw new Error("The response was cut off (max_tokens)");
     }
     const text = response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
     return JSON.parse(text);
@@ -120,17 +120,17 @@ export class Advisor {
     this.emit();
   }
 
-  /** GSI 업데이트마다 호출. 필요하면 백그라운드로 조언을 요청한다 */
+  /** Called on every GSI update. Requests advice in the background when needed */
   onSnapshot(s: GameSnapshot, report: CoachReport, enemies: string[]): Promise<void> | null {
     if (!this.state.enabled || this.state.pending) return null;
     const reason = decideTrigger(this.mem, s, this.now(), this.opts.minIntervalSec);
-    // 트리거가 없어도 데스 수는 따라가야 다음 데스를 감지한다
+    // Track deaths even without a trigger so the next death is detected
     if (s.player && !reason) this.mem.deaths = s.player.deaths;
     if (!reason) return null;
     return this.request(reason, s, report, enemies);
   }
 
-  /** 적 조합이 바뀌면 쓰로틀과 무관하게(최소 10초) 다시 묻는다 */
+  /** Re-ask when the enemy lineup changes, regardless of throttle (10s minimum) */
   onEnemiesChanged(s: GameSnapshot | null, report: CoachReport | null, enemies: string[]) {
     if (!this.state.enabled || this.state.pending || !s?.hero || !report) return null;
     if ((this.now() - this.mem.lastCallAt) / 1000 < 10) return null;
@@ -138,8 +138,8 @@ export class Advisor {
   }
 
   ask(s: GameSnapshot, report: CoachReport, enemies: string[], question?: string) {
-    if (!this.state.enabled) return Promise.reject(new Error("AI 가 꺼져 있습니다 (ANTHROPIC_API_KEY 확인)"));
-    if (this.state.pending) return Promise.reject(new Error("이미 조언을 기다리는 중입니다"));
+    if (!this.state.enabled) return Promise.reject(new Error("AI is off (check ANTHROPIC_API_KEY)"));
+    if (this.state.pending) return Promise.reject(new Error("Already waiting for advice"));
     return this.request("manual", s, report, enemies, question);
   }
 
@@ -166,7 +166,7 @@ export class Advisor {
         advice: {
           summary: String(raw.summary ?? ""),
           danger: raw.danger ?? "low",
-          // 모델이 없는 키를 지어내면 버린다
+          // Drop item keys the model made up
           next_items: (raw.next_items ?? []).filter((i) => getItem(i.item)).slice(0, 4),
           skill_priority: raw.skill_priority ?? [],
           tips: (raw.tips ?? []).slice(0, 4),
@@ -184,9 +184,9 @@ export class Advisor {
 }
 
 function describeError(err: unknown): string {
-  if (err instanceof Anthropic.AuthenticationError) return "API 키가 유효하지 않습니다";
-  if (err instanceof Anthropic.RateLimitError) return "요청 한도 초과 — 잠시 후 다시 시도됩니다";
-  if (err instanceof Anthropic.APIError) return `API 오류 ${err.status ?? ""}: ${err.message}`;
-  if (err instanceof SyntaxError) return "AI 응답을 해석하지 못했습니다";
+  if (err instanceof Anthropic.AuthenticationError) return "Invalid API key";
+  if (err instanceof Anthropic.RateLimitError) return "Rate limited. Will retry shortly";
+  if (err instanceof Anthropic.APIError) return `API error ${err.status ?? ""}: ${err.message}`;
+  if (err instanceof SyntaxError) return "Could not parse the AI response";
   return (err as Error)?.message ?? String(err);
 }

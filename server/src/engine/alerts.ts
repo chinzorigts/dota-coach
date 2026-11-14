@@ -8,13 +8,13 @@ export function buildAlerts(s: GameSnapshot, unspent: number, items: ItemRec[]):
   if (!h || !p) return out;
 
   if (h.alive && h.healthPct > 0 && h.healthPct <= 25) {
-    out.push({ id: "low-hp", level: "danger", text: `체력 ${h.healthPct}% — 후퇴하거나 회복하세요` });
+    out.push({ id: "low-hp", level: "danger", text: `HP ${h.healthPct}%. Back off or heal` });
   } else if (h.alive && h.healthPct <= 45) {
-    out.push({ id: "mid-hp", level: "warn", text: `체력 ${h.healthPct}% — 무리한 교전 주의` });
+    out.push({ id: "mid-hp", level: "warn", text: `HP ${h.healthPct}%. Avoid risky fights` });
   }
 
   if (h.alive && h.maxMana > 0 && h.manaPct <= 15) {
-    out.push({ id: "low-mana", level: "warn", text: `마나 ${h.manaPct}% — 스킬 사용 불가 상태에 가깝습니다` });
+    out.push({ id: "low-mana", level: "warn", text: `Mana ${h.manaPct}%. Almost out of spells` });
   }
 
   if (!h.alive) {
@@ -22,12 +22,12 @@ export function buildAlerts(s: GameSnapshot, unspent: number, items: ItemRec[]):
     out.push({
       id: "dead",
       level: "info",
-      text: `부활까지 ${h.respawnSeconds}초${canBuyback ? ` · 바이백 가능 (${h.buybackCost}골드)` : ""}`,
+      text: `Respawn in ${h.respawnSeconds}s${canBuyback ? `. Buyback available (${h.buybackCost} gold)` : ""}`,
     });
   }
 
   if (unspent > 0) {
-    out.push({ id: "unspent", level: "warn", text: `스킬 포인트 ${unspent}개 남음` });
+    out.push({ id: "unspent", level: "warn", text: `${unspent} unspent ability point${unspent > 1 ? "s" : ""}` });
   }
 
   const affordable = items.filter((i) => i.affordable && i.key !== "tpscroll");
@@ -35,28 +35,28 @@ export function buildAlerts(s: GameSnapshot, unspent: number, items: ItemRec[]):
     out.push({
       id: "gold",
       level: "info",
-      text: `골드 ${p.gold} — 지금 ${affordable[0].name} 살 수 있습니다`,
+      text: `${p.gold} gold. You can buy ${affordable[0].name} now`,
     });
   }
 
-  // 후반: 아이템 사고 나면 바이백 골드가 안 남는 경우
+  // Late game: buying the next item would leave no buyback gold
   if (s.clockTime >= 30 * 60 && h.buybackCost > 0 && h.buybackCooldown <= 0) {
     const next = affordable[0];
     if (next && p.gold - next.remaining < h.buybackCost) {
       out.push({
         id: "buyback-reserve",
         level: "warn",
-        text: `${next.name} 사면 바이백 골드(${h.buybackCost})가 부족해집니다`,
+        text: `Buying ${next.name} leaves you short of buyback (${h.buybackCost})`,
       });
     }
   }
 
   if (!s.items.teleport && s.clockTime > 0) {
-    out.push({ id: "no-tp", level: "warn", text: "TP 스크롤 없음" });
+    out.push({ id: "no-tp", level: "warn", text: "No TP scroll" });
   }
 
   if (h.disabled.length) {
-    out.push({ id: "disabled", level: "danger", text: `상태이상: ${h.disabled.join(", ")}` });
+    out.push({ id: "disabled", level: "danger", text: `Disabled: ${h.disabled.join(", ")}` });
   }
 
   return out;

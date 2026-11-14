@@ -14,12 +14,12 @@ const { server } = createApp(state, advisor);
 
 server.listen(config.port, config.host, () => {
   const url = `http://${config.host === "0.0.0.0" ? "localhost" : config.host}:${config.port}`;
-  console.log(`\n  Dota Coach 서버 실행 중 → ${url}`);
-  console.log(`  GSI 수신: ${url}/gsi  (token: ${config.gsiToken === "dota-coach-local" ? "기본값" : "사용자 지정"})`);
+  console.log(`\n  Dota Coach server running at ${url}`);
+  console.log(`  GSI endpoint: ${url}/gsi  (token: ${config.gsiToken === "dota-coach-local" ? "default" : "custom"})`);
   console.log(
     config.aiEnabled
-      ? `  AI 조언: 켜짐 (${config.model}, effort=${config.effort}, 자동 최소 간격 ${config.aiMinIntervalSec}s)`
-      : "  AI 조언: 꺼짐 — .env 에 ANTHROPIC_API_KEY 를 넣으면 켜집니다 (규칙 엔진은 그대로 동작)",
+      ? `  AI advice: on (${config.model}, effort=${config.effort}, min auto interval ${config.aiMinIntervalSec}s)`
+      : "  AI advice: off. Add ANTHROPIC_API_KEY to .env to enable it (the rule engine works either way)",
   );
   console.log("");
 });

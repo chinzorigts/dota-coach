@@ -3,7 +3,7 @@ import type { HeroListItem } from "../types";
 import { Img } from "./Img";
 import { post } from "../useCoach";
 
-/** 플레이 중 GSI 는 적 영웅을 주지 않아서 직접 고른다. 매치가 바뀌면 서버가 비운다. */
+/** GSI doesn't send enemy heroes while playing, so pick them here. The server clears them on a new match. */
 export function EnemyPicker({ enemies, rolePref, role }: { enemies: string[]; rolePref: "auto" | "core" | "support"; role: "core" | "support" }) {
   const [heroes, setHeroes] = useState<HeroListItem[]>([]);
   const [q, setQ] = useState("");
@@ -30,13 +30,13 @@ export function EnemyPicker({ enemies, rolePref, role }: { enemies: string[]; ro
   return (
     <footer className="enemies">
       <div className="enemy-row">
-        <span className="label">적 영웅</span>
+        <span className="label">Enemies</span>
         <ul className="chips">
           {enemies.map((e) => (
             <li key={e}>
               {byName.get(e) && <Img src={byName.get(e)!.icon} label={byName.get(e)!.localizedName} width={20} height={20} />}
               {byName.get(e)?.localizedName ?? e}
-              <button aria-label={`${byName.get(e)?.localizedName ?? e} 빼기`} onClick={() => save(enemies.filter((x) => x !== e))}>×</button>
+              <button aria-label={`Remove ${byName.get(e)?.localizedName ?? e}`} onClick={() => save(enemies.filter((x) => x !== e))}>×</button>
             </li>
           ))}
         </ul>
@@ -48,8 +48,8 @@ export function EnemyPicker({ enemies, rolePref, role }: { enemies: string[]; ro
               onFocus={() => setOpen(true)}
               onBlur={() => window.setTimeout(() => setOpen(false), 150)}
               onKeyDown={(e) => { if (e.key === "Enter" && matches[0]) add(matches[0].name); }}
-              placeholder={enemies.length ? "영웅 추가 (영문)" : "적 영웅을 넣으면 카운터 아이템을 추천합니다 (영문 이름)"}
-              aria-label="적 영웅 검색"
+              placeholder={enemies.length ? "Add hero" : "Add enemy heroes to get counter-item picks"}
+              aria-label="Search enemy heroes"
             />
             {open && matches.length > 0 && (
               <ul className="suggest" role="listbox">
@@ -64,8 +64,8 @@ export function EnemyPicker({ enemies, rolePref, role }: { enemies: string[]; ro
           </div>
         )}
       </div>
-      <div className="role" role="radiogroup" aria-label="내 역할">
-        <span className="label">역할</span>
+      <div className="role" role="radiogroup" aria-label="My role">
+        <span className="label">Role</span>
         {(["auto", "core", "support"] as const).map((r) => (
           <button
             key={r}
@@ -74,7 +74,7 @@ export function EnemyPicker({ enemies, rolePref, role }: { enemies: string[]; ro
             className={rolePref === r ? "on" : ""}
             onClick={() => post("/api/role", { role: r })}
           >
-            {r === "auto" ? `자동 (${role === "core" ? "코어" : "서포터"})` : r === "core" ? "코어" : "서포터"}
+            {r === "auto" ? `Auto (${role === "core" ? "core" : "support"})` : r === "core" ? "Core" : "Support"}
           </button>
         ))}
       </div>

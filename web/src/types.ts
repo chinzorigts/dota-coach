@@ -1,4 +1,4 @@
-// 서버 /api/state 응답 모양 (server/src/state.ts toJSON 과 맞춘다)
+// Shape of the server's /api/state (keep in sync with server/src/state.ts toJSON)
 export interface ItemState { slot: string; name: string; charges?: number; cooldown: number }
 export interface AbilityState { slot: number; name: string; level: number; canCast: boolean; passive: boolean; cooldown: number; ultimate: boolean }
 

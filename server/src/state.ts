@@ -21,7 +21,7 @@ export class CoachState {
     private loadPopularity: (heroId: number) => Promise<ItemPopularity | null> = getItemPopularity,
   ) {
     advisor.onChange(() => {
-      this.recompute(); // AI 추천이 아이템·스킬 순위에 섞이므로 다시 계산
+      this.recompute(); // AI picks feed the item/skill ranking, so recompute
       this.emit();
     });
   }
@@ -39,7 +39,7 @@ export class CoachState {
     const snap = normalize(raw);
     this.lastGsiAt = snap.receivedAt;
 
-    // 새 매치: 매치에 묶인 상태를 비운다
+    // New match: clear match-scoped state
     if (snap.matchId && snap.matchId !== this.matchId) {
       this.matchId = snap.matchId;
       this.enemies = [];
@@ -104,7 +104,7 @@ export class CoachState {
       rolePref: this.rolePref,
       popularitySource: this.popularity ? "opendota" : "default",
       ai: this.advisor.status(),
-      // 화면에 쓸 표시 이름 (스냅샷에는 내부 키만 있다)
+      // Display names for the UI (the snapshot only has internal keys)
       names: this.displayNames(),
     };
   }

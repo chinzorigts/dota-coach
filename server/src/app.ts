@@ -48,7 +48,7 @@ function serveStatic(res: http.ServerResponse, urlPath: string) {
   if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) file = path.join(root, "index.html");
   if (!fs.existsSync(file)) {
     res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
-    return res.end("웹 UI 가 빌드되지 않았습니다. `npm run build` 후 다시 열거나, 개발 중이면 http://localhost:5173 을 여세요.");
+    return res.end("The web UI is not built. Run `npm run build` and reload, or open http://localhost:5173 during development.");
   }
   res.writeHead(200, { "content-type": MIME[path.extname(file)] ?? "application/octet-stream" });
   fs.createReadStream(file).pipe(res);
@@ -58,7 +58,7 @@ export function createApp(state: CoachState, advisor: Advisor, gsiToken = config
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
-      // Dota 2 → 여기로 매 0.5초 정도마다 POST
+      // Dota 2 POSTs here roughly every 0.5s
       if (req.method === "POST" && url.pathname === "/gsi") {
         const raw = JSON.parse(await readBody(req)) as RawGsi;
         if (raw.auth?.token !== gsiToken) return json(res, 401, { error: "bad gsi token" });
@@ -79,21 +79,21 @@ export function createApp(state: CoachState, advisor: Advisor, gsiToken = config
 
       if (req.method === "POST" && url.pathname === "/api/enemies") {
         const body = JSON.parse((await readBody(req)) || "{}");
-        if (!Array.isArray(body.heroes)) return json(res, 400, { error: "heroes 배열이 필요합니다" });
+        if (!Array.isArray(body.heroes)) return json(res, 400, { error: "heroes must be an array" });
         state.setEnemies(body.heroes.map(String));
         return json(res, 200, { enemies: state.enemies });
       }
 
       if (req.method === "POST" && url.pathname === "/api/role") {
         const body = JSON.parse((await readBody(req)) || "{}");
-        if (!["auto", "core", "support"].includes(body.role)) return json(res, 400, { error: "role 은 auto|core|support" });
+        if (!["auto", "core", "support"].includes(body.role)) return json(res, 400, { error: "role must be auto|core|support" });
         state.setRole(body.role);
         return json(res, 200, { role: state.rolePref });
       }
 
       if (req.method === "POST" && url.pathname === "/api/ask") {
         const body = JSON.parse((await readBody(req)) || "{}");
-        if (!state.snapshot || !state.report) return json(res, 409, { error: "아직 게임 데이터가 없습니다" });
+        if (!state.snapshot || !state.report) return json(res, 409, { error: "No game data yet" });
         const question = typeof body.question === "string" ? body.question.slice(0, 500) : undefined;
         try {
           await advisor.ask(state.snapshot, state.report, state.enemies, question);
@@ -116,7 +116,7 @@ export function createApp(state: CoachState, advisor: Advisor, gsiToken = config
   const send = (ws: WebSocket) => ws.readyState === WebSocket.OPEN && ws.send(JSON.stringify({ type: "state", data: state }));
   wss.on("connection", (ws) => send(ws));
 
-  // GSI 가 0.1초 간격으로 몰려 와도 브라우저에는 최대 4번/초만 보낸다
+  // GSI can burst every 0.1s; push to browsers at most 4 times per second
   let scheduled = false;
   state.onChange(() => {
     if (scheduled) return;

@@ -10,7 +10,7 @@ export interface ItemRec {
   affordable: boolean;
   reason: string;
   source: "meta" | "counter" | "ai" | "rule";
-  priority: number; // 높을수록 위
+  priority: number; // higher ranks first
 }
 
 export interface SkillRec {
@@ -18,7 +18,7 @@ export interface SkillRec {
   key: string;
   name: string;
   reason: string;
-  /** talent 일 때 같은 티어의 두 선택지 */
+  /** For talents: the two options in the tier */
   options?: { key: string; name: string }[];
 }
 

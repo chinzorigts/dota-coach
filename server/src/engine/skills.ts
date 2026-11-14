@@ -2,7 +2,7 @@ import type { GameSnapshot } from "../gsi/normalize.js";
 import { getAbility, getHeroAbilities } from "../data/constants.js";
 import type { SkillRec } from "./types.js";
 
-/** 스킬 포인트를 주지 않는 레벨 (7.33+ 규칙) */
+/** Levels that grant no ability point (7.33+ rules) */
 const NO_POINT_LEVELS = new Set([17, 19, 21, 22, 23, 24]);
 const TALENT_TIERS = [10, 15, 20, 25];
 
@@ -16,7 +16,7 @@ function levelableAbilities(s: GameSnapshot) {
   return s.abilities.filter((a) => !getAbility(a.name).innate);
 }
 
-/** 근사치다: 샤드/셉터로 생기는 1레벨 스킬이 있으면 실제보다 적게 나올 수 있다 */
+/** Approximate: abilities granted at level 1 by Shard/Scepter can make this undercount */
 export function unspentPoints(s: GameSnapshot): number {
   if (!s.hero) return 0;
   const spent =
@@ -43,7 +43,7 @@ export function recommendSkill(
   const fallback = defaultPriority(s);
   const known = new Set(fallback);
   const ai = (aiPriority ?? []).filter((k) => known.has(k));
-  // AI 가 일부만 말했으면 나머지는 기본 순서로 채운다
+  // If the AI listed only some abilities, fill the rest in default order
   const priority = ai.length ? [...ai, ...fallback.filter((k) => !ai.includes(k))] : fallback;
   const prioritySource = ai.length ? "ai" : "default";
 
@@ -52,18 +52,18 @@ export function recommendSkill(
 
   const abilities = levelableAbilities(s);
 
-  // 1) 궁극기
+  // 1) Ultimate
   const ult = abilities.find((a) => a.ultimate);
   if (ult && ult.level < ultCap(hero.level)) {
     return {
       unspent,
       priority,
       prioritySource,
-      next: { kind: "ability", key: ult.name, name: getAbility(ult.name).name, reason: `궁극기 ${ult.level + 1}레벨 — 찍을 수 있으면 우선` },
+      next: { kind: "ability", key: ult.name, name: getAbility(ult.name).name, reason: `Ultimate level ${ult.level + 1}: always take it when available` },
     };
   }
 
-  // 2) 특성
+  // 2) Talents
   const talents = getHeroAbilities(hero.name)?.talents ?? [];
   for (let tier = 0; tier < TALENT_TIERS.length; tier++) {
     if (hero.level < TALENT_TIERS[tier]) break;
@@ -79,14 +79,14 @@ export function recommendSkill(
       next: {
         kind: "talent",
         key: `talent_tier_${TALENT_TIERS[tier]}`,
-        name: `${TALENT_TIERS[tier]}레벨 특성`,
-        reason: "특성을 아직 고르지 않았습니다",
+        name: `Level ${TALENT_TIERS[tier]} talent`,
+        reason: "Talent not picked yet",
         options,
       },
     };
   }
 
-  // 3) 일반 스킬: 우선순위대로, 레벨 제한 안에서
+  // 3) Basic abilities: by priority, within the level cap
   const cap = basicCap(hero.level);
   for (const key of priority) {
     const a = abilities.find((x) => x.name === key);
@@ -100,7 +100,7 @@ export function recommendSkill(
           kind: "ability",
           key,
           name: getAbility(key).name,
-          reason: `${prioritySource === "ai" ? "AI" : "기본"} 우선순위 ${rank}번 → ${a.level + 1}레벨`,
+          reason: `${prioritySource === "ai" ? "AI" : "Default"} priority #${rank}, to level ${a.level + 1}`,
         },
       };
     }

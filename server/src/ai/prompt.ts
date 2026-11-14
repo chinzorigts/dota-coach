@@ -7,45 +7,45 @@ export const ADVICE_SCHEMA = {
   additionalProperties: false,
   required: ["summary", "danger", "next_items", "skill_priority", "tips"],
   properties: {
-    summary: { type: "string", description: "지금 상황 한두 문장 요약 (한국어)" },
+    summary: { type: "string", description: "One or two sentence summary of the current situation" },
     danger: { type: "string", enum: ["low", "medium", "high"] },
     next_items: {
       type: "array",
-      description: "다음에 살 아이템 순서. 최대 4개",
+      description: "Items to buy next, in order. At most 4",
       items: {
         type: "object",
         additionalProperties: false,
         required: ["item", "reason"],
         properties: {
-          item: { type: "string", description: "dotaconstants 아이템 키 (예: black_king_bar)" },
-          reason: { type: "string", description: "짧은 이유 (한국어)" },
+          item: { type: "string", description: "dotaconstants item key (e.g. black_king_bar)" },
+          reason: { type: "string", description: "Short reason" },
         },
       },
     },
     skill_priority: {
       type: "array",
-      description: "일반 스킬(궁극기 제외)을 마스터할 순서. 주어진 ability key 만 사용",
+      description: "Order to max basic abilities (no ultimate). Use only the given ability keys",
       items: { type: "string" },
     },
     tips: {
       type: "array",
-      description: "지금 바로 실행할 수 있는 플레이 조언. 최대 4개, 각 한 문장 (한국어)",
+      description: "Actionable play tips for right now. At most 4, one sentence each",
       items: { type: "string" },
     },
   },
 } as const;
 
-export const SYSTEM_PROMPT = `당신은 Dota 2 코치입니다. 플레이어가 게임 중 두 번째 화면으로 보는 조언을 씁니다.
+export const SYSTEM_PROMPT = `You are a Dota 2 coach. The player reads your advice on a second screen or an in-game overlay while playing.
 
-규칙:
-- 모든 문장은 한국어로, 짧고 바로 실행할 수 있게 씁니다. 게임 중이라 긴 글은 읽히지 않습니다.
-- 아이템은 반드시 dotaconstants 아이템 키(예: black_king_bar, blink, power_treads)로 적습니다.
-- skill_priority 는 입력의 abilities 에 있는 key 만 쓰고, 궁극기는 빼고 일반 스킬만 순서대로 적습니다.
-- 이미 가진 아이템이나 그 하위 부품은 추천하지 않습니다.
-- 입력의 rule_engine 은 통계·규칙 기반 추천입니다. 동의하면 따르고, 적 조합이나 상황상 더 나은 선택이 있으면 바꾸고 이유를 적습니다.
-- 적 영웅 목록이 비어 있으면 적 조합을 가정하지 말고 내 영웅·상황 중심으로 조언합니다.
-- 플레이어가 질문(question)을 했다면 summary 에서 그 질문에 먼저 답합니다.
-- 확실하지 않은 패치 수치(정확한 쿨다운, 데미지)는 단정하지 않습니다.`;
+Rules:
+- Write in English. Keep every sentence short and immediately actionable; long text is not read mid-game.
+- Always name items by their dotaconstants key (e.g. black_king_bar, blink, power_treads).
+- skill_priority uses only keys from the input abilities list, basic abilities only, ultimate excluded, in maxing order.
+- Do not recommend items the player already owns, or components of items they already built.
+- rule_engine in the input is a stats- and rules-based recommendation. Follow it when you agree; when the enemy lineup or the situation calls for something better, change it and say why.
+- If the enemy list is empty, do not assume an enemy lineup; advise from the player's hero and situation.
+- If the player asked a question, answer it first in summary.
+- Do not state patch-specific numbers (exact cooldowns, damage) you are unsure of.`;
 
 const mmss = (sec: number) => {
   const sign = sec < 0 ? "-" : "";

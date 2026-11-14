@@ -12,7 +12,7 @@ export interface AbilityState {
 
 export interface ItemState {
   slot: string; // slot0..8, stash0..5, teleport0, neutral0
-  name: string; // "blink" (item_ 접두사 제거)
+  name: string; // "blink" (item_ prefix stripped)
   charges?: number;
   cooldown: number;
 }
@@ -34,7 +34,7 @@ export interface HeroState {
   aghsScepter: boolean;
   aghsShard: boolean;
   attributesLevel: number;
-  /** talent_1..8. 인덱스 0,1 = 10레벨 티어, 2,3 = 15, 4,5 = 20, 6,7 = 25 */
+  /** talent_1..8. Index 0,1 = level 10 tier, 2,3 = 15, 4,5 = 20, 6,7 = 25 */
   talents: boolean[];
   disabled: string[]; // stunned/silenced/hexed...
 }

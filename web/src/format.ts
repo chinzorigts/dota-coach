@@ -10,7 +10,7 @@ export function clock(sec: number) {
   return `${sign}${Math.floor(a / 60)}:${String(a % 60).padStart(2, "0")}`;
 }
 
-export const gold = (n: number) => n.toLocaleString("ko-KR");
+export const gold = (n: number) => n.toLocaleString("en-US");
 
 export function prettyKey(key: string) {
   return key.replace(/^[a-z]+_/, "").replace(/_/g, " ");

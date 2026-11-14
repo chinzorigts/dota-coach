@@ -1,5 +1,5 @@
-// Dota 2 의 gamestate_integration 폴더에 cfg 를 써 넣는다.
-// 사용: npm run install-cfg [-- "<dota 2 beta 경로>"]
+// Writes the cfg into Dota 2's gamestate_integration folder.
+// Usage: npm run install-cfg [-- "<path to dota 2 beta>"]
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -51,7 +51,7 @@ function steamRoots(): string[] {
   ];
 }
 
-/** libraryfolders.vdf 에서 추가 라이브러리 경로를 읽는다 (게임을 다른 드라이브에 깐 경우) */
+/** Reads extra library paths from libraryfolders.vdf (game installed on another drive) */
 function libraryFolders(root: string): string[] {
   const vdf = path.join(root, "steamapps", "libraryfolders.vdf");
   if (!fs.existsSync(vdf)) return [];
@@ -79,9 +79,9 @@ function main() {
   const uri = `http://127.0.0.1:${config.port}/gsi`;
   const cfg = buildCfg(uri, config.gsiToken);
   if (!dota) {
-    console.error("Dota 2 설치 폴더를 찾지 못했습니다.");
-    console.error('  npm run install-cfg -- "C:\\...\\steamapps\\common\\dota 2 beta"  처럼 경로를 넘기거나 .env 에 DOTA_PATH 를 넣으세요.\n');
-    console.error("또는 아래 내용을 직접 저장하세요:");
+    console.error("Could not find the Dota 2 install folder.");
+    console.error('  Pass the path, e.g. npm run install-cfg -- "C:\\...\\steamapps\\common\\dota 2 beta", or set DOTA_PATH in .env.\n');
+    console.error("Or save the following yourself:");
     console.error("  <dota 2 beta>/game/dota/cfg/gamestate_integration/gamestate_integration_coach.cfg\n");
     console.log(cfg);
     process.exit(1);
@@ -90,11 +90,11 @@ function main() {
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, "gamestate_integration_coach.cfg");
   fs.writeFileSync(file, cfg);
-  console.log(`✔ 저장: ${file}`);
+  console.log(`✔ Saved: ${file}`);
   console.log(`  → ${uri}`);
-  console.log("\n마지막 단계: Steam 라이브러리 → Dota 2 → 속성 → 시작 옵션에 다음을 추가하세요");
+  console.log("\nLast step: Steam Library > Dota 2 > Properties > Launch Options, add:");
   console.log("  -gamestateintegration\n");
-  console.log("그 다음 Dota 2 를 (재)시작하면 서버로 데이터가 들어옵니다.");
+  console.log("Then (re)start Dota 2 and data will start flowing to the server.");
 }
 
 if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("install-cfg.ts")) main();

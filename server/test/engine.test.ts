@@ -41,7 +41,7 @@ describe("skills", () => {
   });
 
   it("follows AI priority and respects the level cap", () => {
-    // 레벨 5: 일반 스킬 최대 3. 블레이드 퓨리가 이미 3이면 다음 우선순위로
+    // Level 5: basic cap is 3. Blade Fury is already 3, so the next priority is picked
     const s = normalize(rawGame({ level: 5, abilityLevels: [3, 1, 0, 0] }));
     const r = recommendSkill(s, ["juggernaut_blade_fury", "juggernaut_blade_dance"]);
     expect(r.prioritySource).toBe("ai");

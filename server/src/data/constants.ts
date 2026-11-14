@@ -1,4 +1,4 @@
-// 영웅·아이템·스킬 정적 데이터. npm `dotaconstants`(OpenDota 공식 상수)에서 읽으므로 오프라인에서도 동작한다.
+// Static hero/item/ability data from npm `dotaconstants` (OpenDota's official constants), so it works offline.
 import * as dc from "dotaconstants";
 
 interface RawHero {
@@ -30,7 +30,7 @@ interface RawHeroAbilities {
   talents: { name: string; level: number }[];
 }
 
-// 패키지가 build/*.json 서브패스를 exports 로 막아 두어 메인 진입점의 named export 를 쓴다
+// The package blocks build/*.json subpaths via exports, so use the main entry's named exports
 const heroes = dc.heroes as unknown as Record<string, RawHero>;
 const items = dc.items as unknown as Record<string, RawItem>;
 const abilities = dc.abilities as unknown as Record<string, RawAbility>;
@@ -125,8 +125,8 @@ function prettify(key: string) {
 }
 
 /**
- * 이미 가진 아이템들을 감안해 `key` 를 완성하는 데 남은 골드.
- * 직접 하위 부품만 본다(재귀로 내려가면 이미 완성한 중간 아이템을 이중으로 깎는다).
+ * Gold still needed to complete `key`, given the items already owned.
+ * Looks at direct components only (recursing would double-count finished intermediate items).
  */
 export function remainingCost(key: string, owned: string[]): number {
   const it = getItem(key);

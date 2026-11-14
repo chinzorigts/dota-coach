@@ -1,95 +1,123 @@
 # Dota Coach
 
-Dota 2 실시간 코치. 게임이 보내는 상태(GSI)를 받아 **지금 살 아이템, 찍을 스킬, 위험 신호, 맵 타이머**를 보여 주고, Claude 가 상황을 읽어 조언합니다. 두 번째 모니터나 폰 브라우저로 봅니다.
+A real-time Dota 2 coach. It reads the game's state through Valve's Game State Integration (GSI) and shows **what to buy next, which skill to level, danger signals and map timers**, while Claude reads the situation and gives advice. Use it as an **in-game overlay**, on a second monitor, or in your phone's browser.
 
 ```
-Dota 2 ──(GSI, 0.5초마다 POST)──► 로컬 서버 :3001 ──(WebSocket)──► 대시보드 (브라우저/폰)
-                                      │
-                                      ├─ 규칙 엔진: 아이템 · 스킬 · 경고 · 타이머 (항상, 즉시)
-                                      ├─ OpenDota: 이 영웅의 실제 인기 빌드 (24시간 캐시)
-                                      └─ Claude: 사망·5분마다·적 조합 변경·질문 시 상황 분석
+Dota 2 ──(GSI, POST every ~0.5s)──► local server :3001 ──(WebSocket)──► dashboard  (browser / phone)
+                                         │                         └──► overlay    (Electron, over the game)
+                                         ├─ rule engine: items · skills · alerts · timers (always, instant)
+                                         ├─ OpenDota: this hero's real popular builds (cached 24h)
+                                         └─ Claude: on death, every 5 min, lineup change, or when you ask
 ```
 
-## 안전성 — VAC 걱정 없음
+## Is it safe? (VAC)
 
-데이터는 **Valve 공식 Game State Integration** 으로만 받습니다. 게임이 설정 파일을 읽고 스스로 보내 주는 방식이라 메모리를 읽거나 게임에 무언가를 주입하지 않습니다.
+Data comes only from **Valve's official Game State Integration**: the game reads a config file and sends its own state to localhost. Nothing reads game memory or injects into the game, and the overlay is an ordinary separate window.
 
-그 대신 한계가 있습니다: **직접 플레이할 때 GSI 는 내 영웅 정보만 줍니다.** 적 아이템·위치는 오지 않아서, 적 영웅은 화면 아래에서 직접 고릅니다(카운터 아이템과 AI 분석에 반영됩니다).
+The trade-off: **while you play, GSI only describes your own hero.** Enemy items and positions are not sent, so you pick the enemy heroes at the bottom of the dashboard (they feed counter items and the AI analysis).
 
-## 시작하기
+## Getting started
 
-Node.js 20.12 이상이 필요합니다.
+Requires Node.js 20.12+.
 
 ```bash
 npm install
-cp .env.example .env        # ANTHROPIC_API_KEY 를 넣으면 AI 조언이 켜집니다 (없어도 규칙 엔진은 동작)
-npm run install-cfg         # Dota 2 폴더에 GSI 설정 파일을 넣습니다
-npm run build && npm start  # http://127.0.0.1:3001
+cp .env.example .env        # add ANTHROPIC_API_KEY to enable AI advice (the rule engine works without it)
+npm run install-cfg         # puts the GSI config file in your Dota 2 folder
+npm run build && npm start  # dashboard at http://127.0.0.1:3001
 ```
 
-마지막으로 **Steam → Dota 2 → 속성 → 시작 옵션**에 `-gamestateintegration` 을 추가하고 Dota 2 를 재시작합니다. 봇전으로 바로 확인할 수 있습니다.
+Then in Steam open **Dota 2 > Properties > Launch Options**, add `-gamestateintegration`, and restart Dota 2. A bot match is the quickest check.
 
-`install-cfg` 가 설치 폴더를 못 찾으면 경로를 넘기세요:
+If `install-cfg` can't find your install, pass the path:
 
 ```bash
 npm run install-cfg -- "D:\SteamLibrary\steamapps\common\dota 2 beta"
 ```
 
-### 게임 없이 화면 보기
+## In-game overlay
 
 ```bash
-npm start            # 터미널 1
-npm run mock         # 터미널 2 — 가짜 게임(저거넛)을 20배속으로 보냄
+npm run overlay
+```
+
+This builds the UI, starts the coach server if it isn't already running, and opens a small transparent window on top of the game (right side, below the top bar).
+
+**Set Dota 2 to Borderless window** (Settings > Video > Display Mode). In exclusive fullscreen the game owns the screen and no external window can be drawn over it. That limit applies to every external overlay, not just this one.
+
+| Hotkey | Action |
+|---|---|
+| `Ctrl+Shift+L` | Unlock / lock. Locked (default): clicks pass through to the game and the window never steals focus. Unlocked: drag to move, resize from the edges, type a question. Position is remembered |
+| `Ctrl+Shift+H` | Show / hide |
+| `Ctrl+Shift+Q` | Ask the AI "What should I do right now?" without leaving the game |
+
+On macOS use `⌘⇧` instead of `Ctrl+Shift`. The same actions plus **Open full dashboard** and **Reset position** are in the tray icon menu. If another app already owns a hotkey, the overlay prints a warning and the tray menu still works.
+
+The overlay shows only what changes a decision mid-fight: next item with a gold bar, next skill or talent, danger alerts, the two nearest timers, and a short AI summary.
+
+### Preview without a game
+
+```bash
+npm start            # terminal 1
+npm run mock         # terminal 2: a fake Juggernaut game at 20x speed
 npm run mock -- --speed 5 --start 900 --hero npc_dota_hero_axe --hero-id 2
 ```
 
-### 개발
+Open `http://127.0.0.1:3001/overlay` in a browser to see the overlay layout without Electron.
+
+### Development
 
 ```bash
 npm run dev:server   # :3001 (tsx watch)
-npm run dev:web      # :5173 (Vite, /api·/ws 는 :3001 로 프록시)
-npm test             # 서버 단위·통합 테스트 (vitest)
-npm run typecheck
+npm run dev:web      # :5173 (Vite, proxies /api and /ws to :3001)
+npm test             # server unit + integration tests (vitest)
+npm run typecheck    # server, web and overlay
 ```
 
-### 폰으로 보기
+### Viewing on a phone
 
-`.env` 에 `HOST=0.0.0.0` 을 두고 같은 와이파이에서 `http://<PC IP>:3001` 을 엽니다.
-이때 같은 네트워크의 누구나 대시보드를 보고 **AI 질문(API 비용)** 을 보낼 수 있습니다. GSI 수신은 토큰으로 막혀 있습니다.
+Set `HOST=0.0.0.0` in `.env` and open `http://<your PC's IP>:3001` on the same Wi-Fi.
+Anyone on that network can then see the dashboard and **send AI questions (which cost API credits)**. GSI ingestion stays protected by the token.
 
-## 무엇을 추천하나
+## What it recommends
 
-| 영역 | 근거 |
+| Area | Based on |
 |---|---|
-| 아이템 | ① TP 없음 같은 기본 규칙 ② Claude 추천 ③ 적 조합 카운터(투명·환영·회복·회피·마법 폭딜·침묵·물리 폭딜·버프) ④ OpenDota 인기 빌드(못 쓰면 주 능력치·역할별 기본 빌드). 이미 가진 부품을 빼고 **남은 골드**를 계산합니다 |
-| 스킬 | 궁극기 → 특성(10/15/20/25) → 일반 스킬 우선순위(Claude 가 정해 주면 그 순서, 아니면 슬롯 순). 남은 스킬 포인트를 레벨에서 계산합니다 |
-| 경고 | 체력·마나 낮음, 사망·바이백 가능, 스킬 포인트 남음, 골드 쌓임, 후반 바이백 골드 부족, TP 없음, 상태이상 |
-| 타이머 | 바운티·파워·지혜 룬, 연꽃, 낮/밤, 캠프 스택(:53), 로샨(GSI 가 줄 때) |
+| Items | ① basic rules (e.g. no TP) ② Claude's picks ③ counters to the enemy lineup (invisibility, illusions, healing, evasion, magic burst, silences, physical burst, buffs) ④ OpenDota popular builds, or a default build by primary attribute and role when OpenDota is unreachable. Shows **gold still needed** after subtracting components you own |
+| Skills | Ultimate first, then talents (10/15/20/25), then basic abilities in priority order (Claude's order when available, otherwise slot order). Unspent points are computed from your level |
+| Alerts | Low HP/mana, dead with buyback available, unspent points, gold piling up, late-game buyback reserve, no TP, disables |
+| Timers | Bounty/power/wisdom runes, lotus, day/night, camp stack (:53), Roshan (when GSI provides it) |
 
-## AI 조언 (Claude)
+## AI advice (Claude)
 
-- 부르는 때: 영웅 확정 직후 · 사망 시(30초 쿨다운) · 5분마다(`COACH_AI_MIN_INTERVAL` 간격 이상) · 적 조합 변경 · **질문하기 버튼**
-- 기본 모델은 `claude-opus-5-5`, `effort=low`(게임 중 응답 속도 우선). `.env` 의 `COACH_MODEL` / `COACH_EFFORT` 로 바꿉니다. 비용을 줄이려면 `COACH_MODEL=claude-haiku-5-5`
-- 안전 분류기 거절 시 서버 측 자동 대체 모델(`fallbacks: "default"`)을 켜 두었습니다
-- 응답은 JSON 스키마로 강제하고, 실제로 없는 아이템 키는 버립니다
+- Runs when your hero is locked in, after a death (30s cooldown), every 5 minutes (at least `COACH_AI_MIN_INTERVAL` apart), when the enemy lineup changes, and when you ask
+- Default model `claude-opus-5-5` with `effort=low` (fast responses mid-game). Change with `COACH_MODEL` / `COACH_EFFORT` in `.env`. For lower cost: `COACH_MODEL=claude-haiku-5-5`
+- Server-side refusal fallback (`fallbacks: "default"`) is enabled
+- Output is constrained to a JSON schema, and item keys that don't exist are dropped
 
-## 패치가 바뀌면
+## When a patch lands
 
-- 영웅·아이템·스킬 데이터: `npm update dotaconstants -w server`
-- 룬·이벤트 주기: `server/src/engine/timers.ts` 한 곳 (`approx: true` 는 패치마다 바뀌기 쉬운 값)
-- 카운터 표: `server/src/engine/counters.ts` — 테스트가 모든 영웅·아이템 키가 실제로 있는지 확인합니다
-- 스킬 포인트 없는 레벨: `server/src/engine/skills.ts` 의 `NO_POINT_LEVELS`
+- Heroes, items, abilities: `npm update dotaconstants -w server`
+- Rune and event intervals: `server/src/engine/timers.ts` (`approx: true` marks values that change often)
+- Counter table: `server/src/engine/counters.ts`. A test checks every hero and item key exists
+- Levels that grant no ability point: `NO_POINT_LEVELS` in `server/src/engine/skills.ts`
 
-## 구조
+## Known limits
+
+- Unspent ability points are approximate: heroes that gain a level-1 ability from Shard/Scepter can undercount
+- The overlay cannot appear over exclusive fullscreen (see above)
+
+## Layout
 
 ```
 server/src
-  gsi/        GSI 원본 타입과 정규화
-  data/       dotaconstants(정적) · OpenDota(인기 빌드, 캐시)
-  engine/     아이템 · 스킬 · 경고 · 타이머 · 카운터 → CoachReport
-  ai/         Claude 프롬프트 · 트리거/쓰로틀 · 호출
-  state.ts    매치 상태(적 영웅, 역할, 인기 빌드, AI 결과)
-  app.ts      HTTP(/gsi, /api/*) + WebSocket(/ws) + 정적 파일
+  gsi/        raw GSI types and normalization
+  data/       dotaconstants (static) · OpenDota (popular builds, cached)
+  engine/     items · skills · alerts · timers · counters → CoachReport
+  ai/         Claude prompt · triggers/throttle · API call
+  state.ts    match state (enemies, role, popular build, AI result)
+  app.ts      HTTP (/gsi, /api/*) + WebSocket (/ws) + static files
   tools/      install-cfg · mock-gsi
-web/src       React 대시보드
+web/src       React dashboard; overlay/ holds the compact overlay view (/overlay)
+overlay/      Electron shell: transparent click-through window, hotkeys, tray
 ```

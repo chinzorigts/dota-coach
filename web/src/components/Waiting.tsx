@@ -2,28 +2,28 @@ export function Waiting({ connected, hasGsi, gameState }: { connected: boolean; 
   if (!connected) {
     return (
       <div className="waiting">
-        <h1>서버에 연결하는 중</h1>
-        <p>터미널에서 <code>npm start</code> 가 실행 중인지 확인하세요. 연결되면 자동으로 이어집니다.</p>
+        <h1>Connecting to the server</h1>
+        <p>Check that <code>npm start</code> is running in a terminal. This page reconnects on its own.</p>
       </div>
     );
   }
   if (hasGsi) {
     return (
       <div className="waiting">
-        <h1>영웅을 고르면 시작합니다</h1>
-        <p>Dota 2 에서 데이터가 들어오고 있습니다{gameState ? ` (${gameState.replace("DOTA_GAMERULES_STATE_", "").toLowerCase()})` : ""}. 영웅이 정해지면 분석이 바로 뜹니다.</p>
+        <h1>Pick a hero to start</h1>
+        <p>Dota 2 is sending data{gameState ? ` (${gameState.replace("DOTA_GAMERULES_STATE_", "").toLowerCase()})` : ""}. Analysis appears as soon as your hero is locked in.</p>
       </div>
     );
   }
   return (
     <div className="waiting">
-      <h1>Dota 2 를 기다리는 중</h1>
+      <h1>Waiting for Dota 2</h1>
       <ol>
-        <li><code>npm run install-cfg</code> 로 게임 폴더에 설정 파일을 넣습니다.</li>
-        <li>Steam → Dota 2 → 속성 → 시작 옵션에 <code>-gamestateintegration</code> 을 추가합니다.</li>
-        <li>Dota 2 를 재시작하고 게임(봇전도 됩니다)에 들어갑니다.</li>
+        <li>Run <code>npm run install-cfg</code> to put the config file in your game folder.</li>
+        <li>In Steam, open Dota 2 &gt; Properties &gt; Launch Options and add <code>-gamestateintegration</code>.</li>
+        <li>Restart Dota 2 and join a game (a bot match works).</li>
       </ol>
-      <p className="hint">게임 없이 화면만 보려면 다른 터미널에서 <code>npm run mock</code></p>
+      <p className="hint">To preview without a game, run <code>npm run mock</code> in another terminal.</p>
     </div>
   );
 }
