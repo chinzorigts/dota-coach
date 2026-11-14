@@ -13,9 +13,10 @@ export function buildAlerts(s: GameSnapshot, unspent: number, items: ItemRec[], 
   const p = s.player;
   if (!h || !p) return out;
 
+  // HP 0% with alive=true is the frame where the hero just died and GSI hasn't flipped `alive` yet: no HP alert
   if (h.alive && h.healthPct > 0 && h.healthPct <= prefs.lowHpPct) {
     out.push({ id: "low-hp", level: "danger", text: `HP ${h.healthPct}%. Back off or heal` });
-  } else if (h.alive && h.healthPct <= prefs.lowHpPct + 20) {
+  } else if (h.alive && h.healthPct > 0 && h.healthPct <= prefs.lowHpPct + 20) {
     out.push({ id: "mid-hp", level: "warn", text: `HP ${h.healthPct}%. Avoid risky fights` });
   }
 

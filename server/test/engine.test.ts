@@ -162,4 +162,18 @@ describe("report", () => {
     expect(r.alerts.some((a) => a.id === "low-hp")).toBe(true);
     expect(r.items.length).toBeGreaterThan(0);
   });
+
+  it("shows no HP alert while dead or at HP 0%, only the respawn notice", () => {
+    const hpAlerts = (alive: boolean, hp: number) => {
+      const raw = rawGame({ alive, hp });
+      if (hp === 0) raw.hero!.health = 0;
+      const r = buildReport(normalize(raw), { rolePref: "auto", popularity: null, enemies: [], ai: null });
+      return r.alerts.map((a) => a.id).filter((id) => id === "low-hp" || id === "mid-hp" || id === "dead");
+    };
+    expect(hpAlerts(false, 0)).toEqual(["dead"]);
+    expect(hpAlerts(false, 10)).toEqual(["dead"]);
+    expect(hpAlerts(true, 0)).toEqual([]); // just died, GSI still says alive
+    expect(hpAlerts(true, 10)).toEqual(["low-hp"]);
+    expect(hpAlerts(true, 40)).toEqual(["mid-hp"]);
+  });
 });
