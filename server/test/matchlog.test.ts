@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -11,8 +11,9 @@ import {
   parseLobbyLine,
 } from "../src/matchlog/parser.js";
 import { ServerLogWatcher, candidateLogPaths, parseLibraryFolders } from "../src/matchlog/watcher.js";
-import { parsePlayerSummary, rankLabel, type PlayerSummary } from "../src/data/opendota.js";
+import { getPlayerSummary, parsePlayerSummary, rankLabel, type PlayerSummary } from "../src/data/opendota.js";
 import { Advisor } from "../src/ai/advisor.js";
+import { config } from "../src/config.js";
 import { CoachState } from "../src/state.js";
 import { rawGame, rt } from "./fixtures.js";
 
@@ -102,29 +103,57 @@ describe("OpenDota player summary", () => {
     expect(rankLabel(95)).toBeNull();
   });
 
-  it("builds win rate and top heroes from public data", () => {
-    const s = parsePlayerSummary(
-      7,
-      { profile: { personaname: "Foe" }, rank_tier: 61 },
-      { win: 12, lose: 8 },
-      [{ hero_id: 1, games: 2, win: 1 }, { hero_id: "8", games: 9, win: 6 }, { hero_id: 2, games: 0, win: 0 }, { hero_id: 5, games: 4, win: 1 }, { hero_id: 6, games: 3, win: 3 }],
-    );
+  it("builds win rate and top heroes from recent matches", () => {
+    // player_slot < 128 is Radiant; a win is radiant_win matching our side
+    const m = (hero_id: number | string, player_slot: number, radiant_win: boolean) => ({ hero_id, player_slot, radiant_win });
+    const s = parsePlayerSummary(7, { profile: { personaname: "Foe" }, rank_tier: 61 }, [
+      m(8, 0, true), m("8", 130, false), m(8, 1, false), m(5, 129, true), m(5, 2, true), m(6, 3, true), m(1, 4, false),
+    ]);
     expect(s.name).toBe("Foe");
     expect(s.rank).toBe("Ancient 1");
-    expect(s.recent).toEqual({ games: 20, wins: 12, losses: 8, winRate: 0.6 });
-    expect(s.topHeroes.map((h) => h.heroId)).toEqual([8, 5, 6]);
+    expect(s.recent).toEqual({ games: 7, wins: 4, losses: 3, winRate: 4 / 7 });
+    expect(s.topHeroes).toEqual([{ heroId: 8, games: 3, wins: 2 }, { heroId: 5, games: 2, wins: 1 }, { heroId: 6, games: 1, wins: 1 }]);
     expect(s.isPrivate).toBe(false);
   });
 
+  it("keeps the rank when recent matches could not be fetched", () => {
+    const s = parsePlayerSummary(7, { profile: { personaname: "Foe" }, rank_tier: 61 }, undefined);
+    expect(s.recent).toBeNull();
+    expect(s.rank).toBe("Ancient 1");
+    expect(s.isPrivate).toBe(false);
+  });
+
+  it("treats OpenDota's 404 for an unknown account as private, not as a failure", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      calls.push(url);
+      return new Response(JSON.stringify({ error: "Not Found" }), { status: 404 });
+    });
+    const cacheDir = config.cacheDir;
+    config.cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "coach-cache-")); // keep the repo's .cache clean
+    try {
+      const id = 4_000_000_000 + Math.floor(Math.random() * 100_000_000);
+      const s = await getPlayerSummary(id);
+      expect(s?.isPrivate).toBe(true);
+      expect(calls).toHaveLength(1); // /recentMatches skipped
+    } finally {
+      vi.unstubAllGlobals();
+      config.cacheDir = cacheDir;
+    }
+  });
+
   it("flags private / unknown profiles", () => {
-    expect(parsePlayerSummary(7, { profile: null }, null, null).isPrivate).toBe(true);
-    expect(parsePlayerSummary(7, { profile: { personaname: "x" }, rank_tier: 33 }, { win: 0, lose: 0 }, []).isPrivate).toBe(true);
+    expect(parsePlayerSummary(7, null, []).isPrivate).toBe(true);
+    expect(parsePlayerSummary(7, { profile: { personaname: "x" }, rank_tier: 33 }, []).isPrivate).toBe(true);
   });
 });
 
 describe("CoachState lobby", () => {
   const summary = (accountId: number): PlayerSummary =>
-    parsePlayerSummary(accountId, { profile: { personaname: `p${accountId}` }, rank_tier: 45 }, { win: 5, lose: 5 }, [{ hero_id: 1, games: 3, win: 2 }]);
+    parsePlayerSummary(accountId, { profile: { personaname: `p${accountId}` }, rank_tier: 45 }, [
+      { hero_id: 1, player_slot: 0, radiant_win: true },
+      { hero_id: 1, player_slot: 0, radiant_win: false },
+    ]);
 
   function setup() {
     const requested: number[] = [];

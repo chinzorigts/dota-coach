@@ -103,7 +103,7 @@ export interface MatchPlayer {
     name: string | null;
     rank: string | null;
     rankTier: number | null;
-    recent: { games: number; wins: number; losses: number; winRate: number | null };
+    recent: { games: number; wins: number; losses: number; winRate: number | null } | null;
     topHeroes: { heroId: number; name: string | null; games: number; wins: number }[];
     isPrivate: boolean;
   } | null;

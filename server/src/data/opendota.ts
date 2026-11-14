@@ -71,7 +71,9 @@ export function getItemPopularity(heroId: number): Promise<ItemPopularity | null
 // ---------------------------------------------------------------------------------------------
 // Player summaries (rank, recent win rate, most played heroes) for the opponent panel.
 // OpenDota's free tier allows 60 requests/min and 2000/day without a key, and each player costs up to
-// 3 requests, so requests go through one queue spaced RATE_GAP_MS apart and results are cached on disk.
+// 2 requests, so requests go through one queue spaced RATE_GAP_MS apart and results are cached on disk.
+// /players/:id answers fast; match-based endpoints are slow and flaky (/wl often doesn't answer within 40s,
+// /recentMatches takes ~12s or returns 500), so recent stats are optional: on failure the rank still shows.
 
 export interface PlayerSummary {
   accountId: number;
@@ -81,8 +83,8 @@ export interface PlayerSummary {
   rankTier: number | null;
   leaderboardRank: number | null;
   rank: string | null;
-  /** Recent matches window used for wins/losses */
-  recent: { games: number; wins: number; losses: number; winRate: number | null };
+  /** Last RECENT_GAMES public matches; null when OpenDota couldn't deliver them this time */
+  recent: { games: number; wins: number; losses: number; winRate: number | null } | null;
   topHeroes: { heroId: number; games: number; wins: number }[];
   /** Profile hidden or match data not exposed: OpenDota knows nothing useful */
   isPrivate: boolean;
@@ -103,19 +105,36 @@ export function rankLabel(rankTier: number | null, leaderboardRank: number | nul
   return stars ? `${medal} ${stars}` : medal;
 }
 
-/** Builds a summary from the three OpenDota responses (/players/:id, /wl, /heroes). Exported for tests. */
-export function parsePlayerSummary(accountId: number, profileRaw: unknown, wlRaw: unknown, heroesRaw: unknown, now = Date.now()): PlayerSummary {
+interface RawRecentMatch { hero_id?: number | string; player_slot?: number; radiant_win?: boolean }
+
+/**
+ * Builds a summary from /players/:id and /players/:id/recentMatches.
+ * `recentRaw` undefined = that request failed (stats unknown); [] = no public matches. Exported for tests.
+ */
+export function parsePlayerSummary(accountId: number, profileRaw: unknown, recentRaw: unknown, now = Date.now()): PlayerSummary {
   const p = (profileRaw ?? {}) as { profile?: { personaname?: string; avatarmedium?: string } | null; rank_tier?: number | null; leaderboard_rank?: number | null };
-  const wl = (wlRaw ?? {}) as { win?: number; lose?: number };
-  const wins = Number(wl.win) || 0;
-  const losses = Number(wl.lose) || 0;
-  const games = wins + losses;
-  const heroes = Array.isArray(heroesRaw) ? (heroesRaw as { hero_id: number | string; games?: number; win?: number }[]) : [];
-  const topHeroes = heroes
-    .map((h) => ({ heroId: Number(h.hero_id), games: Number(h.games) || 0, wins: Number(h.win) || 0 }))
-    .filter((h) => h.games > 0 && Number.isFinite(h.heroId))
-    .sort((a, b) => b.games - a.games)
-    .slice(0, 3);
+  const matches = Array.isArray(recentRaw) ? (recentRaw as RawRecentMatch[]).slice(0, RECENT_GAMES) : null;
+  let recent: PlayerSummary["recent"] = null;
+  let topHeroes: PlayerSummary["topHeroes"] = [];
+  if (matches) {
+    const byHero = new Map<number, { heroId: number; games: number; wins: number }>();
+    let wins = 0;
+    let games = 0;
+    for (const m of matches) {
+      if (typeof m.radiant_win !== "boolean" || typeof m.player_slot !== "number") continue;
+      const won = m.player_slot < 128 === m.radiant_win;
+      games++;
+      if (won) wins++;
+      const heroId = Number(m.hero_id);
+      if (!Number.isFinite(heroId) || heroId <= 0) continue;
+      const h = byHero.get(heroId) ?? { heroId, games: 0, wins: 0 };
+      h.games++;
+      if (won) h.wins++;
+      byHero.set(heroId, h);
+    }
+    recent = { games, wins, losses: games - wins, winRate: games ? wins / games : null };
+    topHeroes = [...byHero.values()].sort((a, b) => b.games - a.games || b.wins - a.wins).slice(0, 3);
+  }
   const rankTier = typeof p.rank_tier === "number" ? p.rank_tier : null;
   const leaderboardRank = typeof p.leaderboard_rank === "number" ? p.leaderboard_rank : null;
   return {
@@ -125,10 +144,10 @@ export function parsePlayerSummary(accountId: number, profileRaw: unknown, wlRaw
     rankTier,
     leaderboardRank,
     rank: rankLabel(rankTier, leaderboardRank),
-    recent: { games, wins, losses, winRate: games ? wins / games : null },
+    recent,
     topHeroes,
     // No profile at all, or a profile with zero recent public matches ("Expose Public Match Data" off)
-    isPrivate: !p.profile || games === 0,
+    isPrivate: !p.profile || recent?.games === 0,
     fetchedAt: now,
   };
 }
@@ -143,9 +162,11 @@ function rateLimited<T>(fn: () => Promise<T>): Promise<T> {
   return run;
 }
 
-async function getJson(pathname: string): Promise<unknown> {
+async function getJson(pathname: string, timeoutMs = 8000): Promise<unknown> {
   return rateLimited(async () => {
-    const res = await fetch(`${config.opendotaBase}${pathname}`, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(`${config.opendotaBase}${pathname}`, { signal: AbortSignal.timeout(timeoutMs) });
+    // OpenDota answers 404 for accounts it has never seen (or that hide everything): that's a valid "nothing known"
+    if (res.status === 404 && /^\/players\/\d+$/.test(pathname)) return null;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   });
@@ -162,16 +183,20 @@ async function loadPlayer(accountId: number): Promise<PlayerSummary | null> {
   try {
     const profile = await getJson(`/players/${accountId}`);
     const hasProfile = Boolean((profile as { profile?: unknown })?.profile);
-    // Skip the other two calls for unknown/private accounts: they would only return zeros
-    const [wl, heroes] = hasProfile
-      ? await Promise.all([
-          getJson(`/players/${accountId}/wl?limit=${RECENT_GAMES}`),
-          getJson(`/players/${accountId}/heroes?limit=${RECENT_GAMES}`),
-        ])
-      : [null, null];
-    const summary = parsePlayerSummary(accountId, profile, wl, heroes);
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, JSON.stringify(summary));
+    // Skip the match request for unknown/private accounts: it would only return nothing
+    let recent: unknown = [];
+    if (hasProfile) {
+      recent = await getJson(`/players/${accountId}/recentMatches`, 20000).catch((err) => {
+        console.warn(`[opendota] recent matches for ${accountId} unavailable:`, (err as Error).message);
+        return undefined;
+      });
+    }
+    const summary = parsePlayerSummary(accountId, profile, recent);
+    // A partial summary (no recent stats) is shown but not cached, so the next match retries
+    if (summary.recent || summary.isPrivate) {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, JSON.stringify(summary));
+    }
     return summary;
   } catch (err) {
     console.warn(`[opendota] player ${accountId} failed:`, (err as Error).message);
@@ -188,7 +213,7 @@ export function getPlayerSummary(accountId: number): Promise<PlayerSummary | nul
     playerMemo.set(accountId, p);
     p.then((v) => {
       // Failures retry next time; successes expire with the disk cache
-      if (v === null) playerMemo.delete(accountId);
+      if (v === null || (!v.recent && !v.isPrivate)) playerMemo.delete(accountId);
       else setTimeout(() => playerMemo.delete(accountId), PLAYER_TTL_MS).unref?.();
     });
   }

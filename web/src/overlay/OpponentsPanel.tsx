@@ -22,7 +22,7 @@ export function OpponentsPanel({ match }: { match: MatchInfo }) {
 
 function Row({ p }: { p: MatchPlayer }) {
   const s = p.stats;
-  const wr = s?.recent.winRate;
+  const wr = s?.recent?.winRate;
   return (
     <div className="ov-opp-row">
       <span className="ov-opp-name" title={s?.name ?? String(p.accountId)}>
@@ -39,7 +39,7 @@ function Row({ p }: { p: MatchPlayer }) {
         <>
           <span className="ov-opp-rank">{s.rank ?? "Unranked"}</span>
           <span className={`ov-opp-wr ${wr !== null && wr !== undefined ? (wr >= 0.6 ? "hot" : wr <= 0.4 ? "cold" : "") : ""}`}
-            title={`${s.recent.wins}W ${s.recent.losses}L in the last ${s.recent.games}`}>
+            title={s.recent ? `${s.recent.wins}W ${s.recent.losses}L in the last ${s.recent.games}` : "Recent matches unavailable from OpenDota"}>
             {wr === null || wr === undefined ? "–" : `${Math.round(wr * 100)}%`}
           </span>
           <span className="ov-opp-heroes">
