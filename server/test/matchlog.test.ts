@@ -171,13 +171,15 @@ describe("CoachState lobby", () => {
     raw.player!.team_name = "radiant"; // GSI side disagrees on purpose: the lobby slot wins
     raw.player!.steamid = "76561198060265734"; // account 100000006 = slot 5 (Dire)
     state.ingest(raw);
+    // GSI alone already looks up our own profile (for the rank card); the lobby's order starts after that
+    const before = requested.length;
     state.ingestLobby(lobby());
     await new Promise((r) => setTimeout(r, 0));
     const m = state.matchInfo()!;
     expect(m.myTeam).toBe("dire");
     expect(m.enemies.map((p) => p.accountId)).toEqual([100000001, 100000002, 100000003, 100000004, 100000005]);
     expect(m.allies.find((p) => p.isMe)?.accountId).toBe(100000006);
-    expect(requested.slice(0, 5)).toEqual([100000001, 100000002, 100000003, 100000004, 100000005]);
+    expect(requested.slice(before, before + 5)).toEqual([100000001, 100000002, 100000003, 100000004, 100000005]);
     expect(m.enemies[0]).toMatchObject({ status: "ok", party: 0, stats: { name: "p100000001", rank: "Archon 5" } });
     expect(m.enemies[0].stats!.topHeroes[0].name).toBe("npc_dota_hero_antimage");
   });

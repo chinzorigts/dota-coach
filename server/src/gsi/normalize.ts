@@ -50,6 +50,8 @@ export interface GameSnapshot {
   daytime: boolean;
   paused: boolean;
   team: "radiant" | "dire" | null;
+  /** Set once the game is decided (ancient destroyed) */
+  winTeam: "radiant" | "dire" | null;
   score: { radiant: number; dire: number };
   roshan: { state: string; endSeconds: number } | null;
   player: {
@@ -174,6 +176,7 @@ export function normalize(raw: RawGsi, now = Date.now()): GameSnapshot {
     daytime: map.daytime !== false,
     paused: Boolean(map.paused),
     team,
+    winTeam: map.win_team === "radiant" || map.win_team === "dire" ? map.win_team : null,
     score: { radiant: n(map.radiant_score), dire: n(map.dire_score) },
     roshan: map.roshan_state
       ? { state: map.roshan_state, endSeconds: n(map.roshan_state_end_seconds) }

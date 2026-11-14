@@ -4,6 +4,9 @@ import { Img } from "../components/Img";
 import { abilityImg, clock, gold as fmt, heroIcon } from "../format";
 import { bridge, type OverlayMode } from "./bridge";
 import { OpponentsPanel } from "./OpponentsPanel";
+import { StatsCompareCompact } from "../components/StatsCompare";
+import { RankLine } from "../components/RankCard";
+import { DraftCompact } from "../components/DraftPanel";
 
 /**
  * Compact HUD drawn over the game. Everything here must be readable in a glance,
@@ -61,6 +64,8 @@ export function Overlay() {
           <p className="ov-idle">{!connected ? "Dota Coach: server offline" : "Dota Coach: waiting for a game"}</p>
           {/* The lobby is known from match accept, before heroes are picked */}
           {connected && state?.match && show("opponents") && <OpponentsPanel match={state.match} />}
+          {connected && state?.draft && show("draft") && <DraftCompact draft={state.draft} />}
+          {connected && state && show("rank") && <RankLine rank={state.rank} />}
         </>
       ) : (
         <>
@@ -112,6 +117,8 @@ export function Overlay() {
           )}
 
           {show("opponents") && state.match && state.match.enemies.length > 0 && <OpponentsPanel match={state.match} />}
+
+          {show("benchmark") && state.benchmark && <StatsCompareCompact b={state.benchmark} />}
 
           {show("timers") && r.timers.length > 0 && (
             <div className="ov-timers">

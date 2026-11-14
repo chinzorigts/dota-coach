@@ -1,7 +1,28 @@
 import type { RawGsi } from "./gsi/types.js";
 import { normalize, type GameSnapshot } from "./gsi/normalize.js";
-import { getAbility, getHero, getItem } from "./data/constants.js";
-import { getItemPopularity, getPlayerSummary, type ItemPopularity, type PlayerSummary } from "./data/opendota.js";
+import { allHeroes, getAbility, getHero, getItem, type HeroInfo } from "./data/constants.js";
+import {
+  getHeroBenchmarks,
+  getHeroStats,
+  getItemPopularity,
+  getMatchups,
+  getPlayerHeroTotals,
+  getPlayerSummary,
+  type HeroBenchmarks,
+  type HeroStat,
+  type ItemPopularity,
+  type Matchups,
+  type PlayerHeroTotals,
+  type PlayerSummary,
+} from "./data/opendota.js";
+import { compareStats } from "./engine/benchmarks.js";
+import { bandForMmr, gameResultDelta, rankView, type RankView } from "./engine/rank.js";
+import { suggestPicks, type DraftView } from "./engine/draft.js";
+
+/** Applied MMR changes, kept so a match is never counted twice (even across restarts) and the last one can be undone */
+interface RankHistory {
+  applied: { matchId: string; delta: number; at: number }[];
+}
 import type { LobbyInfo, TeamSide } from "./matchlog/parser.js";
 import type { WatcherStatus } from "./matchlog/watcher.js";
 import { buildReport, type CoachReport, type RolePref } from "./engine/index.js";
@@ -69,6 +90,15 @@ export class CoachState {
   private playerStats = new Map<number, PlayerSummary | "loading" | null>();
   /** Set by index.ts once the server_log watcher runs */
   matchLogStatus: () => WatcherStatus | null = () => null;
+  /** Hero averages and our own averages on the hero being played, for "you vs average" */
+  private bench: { heroId: number; data: HeroBenchmarks | null | "loading" } | null = null;
+  private totals: { key: string; data: PlayerHeroTotals | null | "loading" } | null = null;
+  /** Draft data, loaded on first use. Replaceable in tests. */
+  draftDeps = { loadHeroStats: getHeroStats, loadMatchups: getMatchups };
+  private heroStats: Map<number, HeroStat> | null | "loading" | undefined;
+  private matchups = new Map<number, Matchups | null | "loading">();
+  /** Our own OpenDota profile (medal) once GSI has told us who we are */
+  private me: { accountId: number; summary: PlayerSummary | null | "loading" } | null = null;
 
   constructor(
     private advisor: Advisor,
@@ -76,6 +106,8 @@ export class CoachState {
     private loadBank: () => Promise<{ bank: TemplateBank }> = getTemplateBank,
     readonly settings: SettingsStore = new SettingsStore(null),
     private loadPlayer: (accountId: number) => Promise<PlayerSummary | null> = getPlayerSummary,
+    private loadBench: (heroId: number) => Promise<HeroBenchmarks | null> = getHeroBenchmarks,
+    private loadTotals: (accountId: number, heroId: number) => Promise<PlayerHeroTotals | null> = getPlayerHeroTotals,
   ) {
     this.rolePref = settings.get().coach.defaultRole;
     let lastDefaultRole = this.rolePref;
@@ -127,6 +159,9 @@ export class CoachState {
       });
     }
 
+    this.loadReferences(snap);
+    this.loadMe(snap);
+    this.applyGameResult(snap);
     this.snapshot = snap;
     this.applyGsiLineup(snap);
     this.recompute();
@@ -198,6 +233,158 @@ export class CoachState {
       allies: myTeam ? sided.filter((p) => p.team === myTeam).map(view) : sided.filter((p) => p.team === "radiant").map(view),
       enemies: myTeam ? sided.filter((p) => p.team !== myTeam).map(view) : sided.filter((p) => p.team === "dire").map(view),
     };
+  }
+
+  /** Fetch the reference numbers once per hero (and once per account+hero); both are cached on disk too */
+  private loadReferences(snap: GameSnapshot) {
+    const heroId = snap.hero?.id;
+    if (!heroId) return;
+    if (this.bench?.heroId !== heroId) {
+      const entry: { heroId: number; data: HeroBenchmarks | null | "loading" } = { heroId, data: "loading" };
+      this.bench = entry;
+      this.loadBench(heroId)
+        .catch(() => null)
+        .then((d) => {
+          if (this.bench !== entry) return;
+          entry.data = d;
+          this.emit();
+        });
+    }
+    const accountId = snap.player?.accountId;
+    const key = accountId ? `${accountId}-${heroId}` : null;
+    if (key && accountId && this.totals?.key !== key) {
+      const entry: { key: string; data: PlayerHeroTotals | null | "loading" } = { key, data: "loading" };
+      this.totals = entry;
+      this.loadTotals(accountId, heroId)
+        .catch(() => null)
+        .then((d) => {
+          if (this.totals !== entry) return;
+          entry.data = d;
+          this.emit();
+        });
+    }
+  }
+
+  private loadMe(snap: GameSnapshot) {
+    const accountId = snap.player?.accountId;
+    if (!accountId || this.me?.accountId === accountId) return;
+    const entry: { accountId: number; summary: PlayerSummary | null | "loading" } = { accountId, summary: "loading" };
+    this.me = entry;
+    this.loadPlayer(accountId)
+      .catch(() => null)
+      .then((s) => {
+        if (this.me !== entry) return;
+        entry.summary = s;
+        this.emit();
+      });
+  }
+
+  private rankHistory(): RankHistory {
+    const raw = this.settings.loadData("rank.json") as RankHistory | null;
+    return raw && Array.isArray(raw.applied) ? raw : { applied: [] };
+  }
+
+  /** After a finished game, move the typed-in MMR by ±perGame. Each match counts once. */
+  private applyGameResult(snap: GameSnapshot) {
+    const r = this.settings.get().rank;
+    if (!r.autoAdjust || r.mmr === null || !snap.matchId || !snap.hero) return;
+    const delta = gameResultDelta(snap.winTeam ?? undefined, snap.team, r.perGame);
+    if (delta === null) return;
+    const history = this.rankHistory();
+    if (history.applied.some((a) => a.matchId === snap.matchId)) return;
+    history.applied = [...history.applied, { matchId: snap.matchId, delta, at: Date.now() }].slice(-50);
+    this.settings.saveData("rank.json", history);
+    this.settings.update({ rank: { mmr: Math.max(0, r.mmr + delta) } });
+  }
+
+  /** Revert the last automatic change (e.g. it was an unranked game). The match stays marked as counted. */
+  undoLastRankChange(): boolean {
+    const history = this.rankHistory();
+    const last = history.applied[history.applied.length - 1];
+    const mmr = this.settings.get().rank.mmr;
+    if (!last || last.delta === 0 || mmr === null) return false;
+    history.applied[history.applied.length - 1] = { ...last, delta: 0 };
+    this.settings.saveData("rank.json", history);
+    this.settings.update({ rank: { mmr: Math.max(0, mmr - last.delta) } });
+    return true;
+  }
+
+  rank(): RankView {
+    const r = this.settings.get().rank;
+    const summary = this.me && this.me.summary !== "loading" ? this.me.summary : null;
+    const last = this.rankHistory().applied.at(-1);
+    return rankView({
+      mmr: r.mmr,
+      rankTier: summary?.rankTier ?? null,
+      perGame: r.perGame,
+      lastChange: last && last.delta !== 0 ? last : null,
+    });
+  }
+
+  /** Medal bracket 1..8 for bracket win rates: from the typed MMR, else OpenDota's medal */
+  private bracket(): number | null {
+    const mmr = this.settings.get().rank.mmr;
+    if (mmr !== null) return Math.floor(bandForMmr(mmr).tier / 10);
+    const s = this.me && this.me.summary !== "loading" ? this.me.summary : null;
+    return s?.rankTier ? Math.min(8, Math.floor(s.rankTier / 10)) : null;
+  }
+
+  /** Pick suggestions for your position against the enemy picks known so far (game data or typed in) */
+  draft(): DraftView | null {
+    const s = this.snapshot;
+    // Only useful before your hero is locked in
+    if (s?.hero) return null;
+    const position = this.settings.get().draft.position;
+
+    if (this.heroStats === undefined) {
+      this.heroStats = "loading";
+      this.draftDeps.loadHeroStats()
+        .catch(() => null)
+        .then((m) => {
+          this.heroStats = m;
+          this.emit();
+        });
+    }
+    const enemies = this.enemies.map((n) => getHero(n)).filter((h): h is HeroInfo => Boolean(h));
+    for (const e of enemies) {
+      if (this.matchups.has(e.id)) continue;
+      this.matchups.set(e.id, "loading");
+      this.draftDeps.loadMatchups(e.id)
+        .catch(() => null)
+        .then((m) => {
+          this.matchups.set(e.id, m);
+          // A failed load is retried next time the draft is shown
+          if (m === null) setTimeout(() => this.matchups.get(e.id) === null && this.matchups.delete(e.id), 30_000).unref?.();
+          this.emit();
+        });
+    }
+
+    const base = { position, enemies: enemies.map((e) => e.name), bracket: this.bracket() };
+    if (this.heroStats === "loading") return { ...base, status: "loading", suggestions: [] };
+    if (!this.heroStats) return { ...base, status: "no-data", suggestions: [] };
+
+    const mine = s?.team ? s.lineup[s.team] : [];
+    const taken = new Set<number>([...enemies.map((e) => e.id), ...mine]);
+    const loaded = new Map<number, Matchups>();
+    for (const e of enemies) {
+      const m = this.matchups.get(e.id);
+      if (m && m !== "loading") loaded.set(e.id, m);
+    }
+    const stillLoading = enemies.some((e) => this.matchups.get(e.id) === "loading");
+    return {
+      ...base,
+      status: stillLoading ? "loading" : "ok",
+      suggestions: suggestPicks({ heroes: allHeroes(), enemies, taken, position, bracket: base.bracket, stats: this.heroStats, matchups: loaded }),
+    };
+  }
+
+  benchmark() {
+    const s = this.snapshot;
+    if (!s?.hero) return null;
+    const bench = this.bench?.heroId === s.hero.id ? this.bench.data : "loading";
+    const key = s.player?.accountId ? `${s.player.accountId}-${s.hero.id}` : null;
+    const totals = key && this.totals?.key === key ? this.totals.data : key ? "loading" : null;
+    return compareStats(s, bench, totals);
   }
 
   /** From the UI. Clearing the list hands control back to auto-detection. */
@@ -293,6 +480,9 @@ export class CoachState {
       snapshot: this.snapshot,
       heroInfo: hero ?? null,
       report: this.report,
+      benchmark: this.benchmark(),
+      rank: this.rank(),
+      draft: this.draft(),
       enemies: this.enemies,
       enemySource: this.enemySource,
       detection: { ...this.detection, wanted: this.visionWanted() },

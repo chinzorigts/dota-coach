@@ -18,6 +18,9 @@ const SECTION_LABELS: Record<string, string> = {
   opponents: "Enemy players",
   timers: "Timers",
   ai: "AI summary",
+  benchmark: "You vs average",
+  rank: "Rank / MMR",
+  draft: "Pick suggestions (draft)",
 };
 const TRIGGER_LABELS: [keyof SettingsT["ai"]["triggers"], string][] = [
   ["hero", "When my hero is locked in"],
@@ -275,6 +278,39 @@ export function Settings({ onClose }: { onClose: () => void }) {
         <Range label="Text size" value={s.overlay.scale} min={0.8} max={1.5} step={0.05} disabled={ro}
           format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => change({ overlay: { scale: v } })} />
         <p className="muted small">Changes show up in the overlay right away. Move or resize it with Ctrl+Shift+L.</p>
+      </section>
+
+      <section className="panel set-section">
+        <h2>Rank and MMR</h2>
+        <div className="set-range">
+          <label htmlFor="mmr">My MMR</label>
+          <input id="mmr" type="number" inputMode="numeric" min={0} max={15000} step={1} disabled={ro}
+            value={s.rank.mmr ?? ""} placeholder="From your Dota profile"
+            onChange={(e) => change({ rank: { mmr: e.target.value === "" ? null : Number(e.target.value) } })} />
+        </div>
+        <p className="muted small">Dota doesn't send MMR to apps. Type it once from your profile; without it the medal comes from OpenDota.</p>
+        <Toggle label="Update MMR after each game" checked={s.rank.autoAdjust} disabled={ro}
+          onChange={(v) => change({ rank: { autoAdjust: v } })}
+          hint="Wins add, losses subtract. The game can't tell ranked from unranked, so use Undo on the rank card after a normal or turbo game." />
+        <Range label="MMR per game" value={s.rank.perGame} min={5} max={60} step={1} disabled={ro}
+          format={(v) => `±${v}`} onChange={(v) => change({ rank: { perGame: v } })} />
+      </section>
+
+      <section className="panel set-section">
+        <h2>Draft</h2>
+        <div className="set-range">
+          <label htmlFor="position">My position</label>
+          <select id="position" disabled={ro} value={s.draft.position}
+            onChange={(e) => change({ draft: { position: Number(e.target.value) as SettingsT["draft"]["position"] } })}>
+            <option value={1}>1 · Carry (safe lane)</option>
+            <option value={2}>2 · Mid</option>
+            <option value={3}>3 · Offlane</option>
+            <option value={4}>4 · Soft support</option>
+            <option value={5}>5 · Hard support</option>
+            <option value={0}>Any position</option>
+          </select>
+        </div>
+        <p className="muted small">Pick suggestions before your hero is locked in fit this position and counter the enemy picks you add.</p>
       </section>
 
       <section className="panel set-section">

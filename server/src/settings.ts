@@ -14,7 +14,10 @@ export const MODELS = [
 ] as const;
 export const EFFORTS = ["low", "medium", "high"] as const;
 export const TIMER_IDS = ["bounty", "power", "wisdom", "lotus", "daynight", "stack", "roshan"] as const;
-export const OVERLAY_SECTIONS = ["item", "skill", "alerts", "enemies", "opponents", "timers", "ai"] as const;
+export const OVERLAY_SECTIONS = ["item", "skill", "alerts", "enemies", "opponents", "timers", "ai", "benchmark", "rank", "draft"] as const;
+/** Dota positions: 1 safe lane carry, 2 mid, 3 offlane, 4 soft support, 5 hard support. 0 = not set */
+export const POSITIONS = [0, 1, 2, 3, 4, 5] as const;
+export type Position = (typeof POSITIONS)[number];
 
 export type Effort = (typeof EFFORTS)[number];
 export type TimerId = (typeof TIMER_IDS)[number];
@@ -42,6 +45,13 @@ export interface Settings {
   detection: { enabled: boolean };
   /** Lobby players from server_log.txt (see matchlog/parser.ts for why this is usually unavailable). "" = auto-detect */
   matchInfo: { enabled: boolean; logPath: string };
+  /**
+   * Your MMR as shown on your Dota profile. Valve doesn't expose it to GSI or OpenDota, so it's typed in once and
+   * then nudged by perGame after each finished game when autoAdjust is on (GSI can't tell ranked from unranked).
+   */
+  rank: { mmr: number | null; autoAdjust: boolean; perGame: number };
+  /** The position you play, for pick suggestions during the draft */
+  draft: { position: Position };
 }
 
 export function defaultSettings(): Settings {
@@ -68,6 +78,8 @@ export function defaultSettings(): Settings {
     },
     detection: { enabled: true },
     matchInfo: { enabled: true, logPath: "" },
+    rank: { mmr: null, autoAdjust: true, perGame: 25 },
+    draft: { position: 0 },
   };
 }
 
@@ -93,6 +105,8 @@ export function mergeSettings(base: Settings, patch: unknown): Settings {
   const overlay = isObj(p.overlay) ? p.overlay : {};
   const detection = isObj(p.detection) ? p.detection : {};
   const matchInfo = isObj(p.matchInfo) ? p.matchInfo : {};
+  const rank = isObj(p.rank) ? p.rank : {};
+  const draft = isObj(p.draft) ? p.draft : {};
   return {
     ai: {
       enabled: bool(ai.enabled, base.ai.enabled),
@@ -116,6 +130,20 @@ export function mergeSettings(base: Settings, patch: unknown): Settings {
     matchInfo: {
       enabled: bool(matchInfo.enabled, base.matchInfo.enabled),
       logPath: str(matchInfo.logPath, base.matchInfo.logPath, 1000),
+    },
+    rank: {
+      // null clears it; a number must be a plausible MMR
+      mmr:
+        rank.mmr === null
+          ? null
+          : typeof rank.mmr === "number" && Number.isFinite(rank.mmr)
+            ? clamp(Math.round(rank.mmr), 0, 15000)
+            : base.rank.mmr,
+      autoAdjust: bool(rank.autoAdjust, base.rank.autoAdjust),
+      perGame: num(rank.perGame, base.rank.perGame, 5, 60),
+    },
+    draft: {
+      position: (POSITIONS as readonly unknown[]).includes(draft.position) ? (draft.position as Position) : base.draft.position,
     },
   };
 }
@@ -152,6 +180,16 @@ export class SettingsStore {
 
   get(): Settings {
     return this.current;
+  }
+
+  /** Small state files next to settings.json (e.g. rank history). In-memory when there is no data dir. */
+  private extra = new Map<string, unknown>();
+  loadData(file: string): unknown {
+    return this.dir ? this.read(file) : (this.extra.get(file) ?? null);
+  }
+  saveData(file: string, data: unknown) {
+    if (this.dir) this.write(file, data);
+    else this.extra.set(file, data);
   }
 
   update(patch: unknown): Settings {
