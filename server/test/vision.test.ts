@@ -57,11 +57,21 @@ describe("EnemyDetector", () => {
     expect(res!.enemies).toEqual(foes);
   });
 
-  it("refuses to confirm when my side is confident but my hero is missing (bad rectangles)", () => {
+  it("trusts the rows when teammates are recognised even if my own portrait isn't (persona/arcana art)", () => {
     const d = new EnemyDetector(bank);
-    const strangers = [HEROES[20], HEROES[21], HEROES[22], HEROES[23], HEROES[24]];
+    // My slot shows art that matches nothing (a persona); the other four allies are recognised
+    const allyFrame = (f: number) => [blank(), ...frame(allies.slice(1), f)];
     let res;
-    for (let f = 1; f <= MIN_STREAK + 1; f++) res = d.update({ radiant: frame(strangers, f), dire: frame(foes, f) }, "radiant", me);
+    for (let f = 1; f <= MIN_STREAK; f++) res = d.update({ radiant: allyFrame(f), dire: frame(foes, f) }, "radiant", me);
+    expect(res!.calibration).toBe("ok");
+    expect(res!.enemies).toEqual(foes);
+  });
+
+  it("refuses to confirm when nothing is recognised on either side (rows in the wrong place)", () => {
+    const d = new EnemyDetector(bank);
+    const empty = () => [blank(), blank(), blank(), blank(), blank()];
+    let res;
+    for (let f = 1; f <= MIN_STREAK + 1; f++) res = d.update({ radiant: empty(), dire: empty() }, "radiant", me);
     expect(res!.calibration).toBe("bad");
     expect(res!.enemies).toEqual([]);
   });

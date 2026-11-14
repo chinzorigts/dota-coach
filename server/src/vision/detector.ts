@@ -67,11 +67,14 @@ export class EnemyDetector {
     const enemyFrame = effectiveEnemy === "radiant" ? radiant : dire;
     const ownFrame = effectiveEnemy === "radiant" ? dire : radiant;
 
-    // Confident matches on my side that never include my hero mean the rectangles are off
-    const ownConfident = ownFrame.filter((r) => r.hero).length;
+    // Several teammates recognised on my side also proves the rows are in the right place. My own portrait can't
+    // be relied on alone: personas and arcanas (e.g. Anti-Mage's "Wei") change the top-bar art.
+    // Nothing recognised on either side means the rows are off (wrong screen, unusual HUD): don't trust them.
+    const ownConfident = ownFrame.filter((r) => r.hero && r.hero !== myHero).length;
+    const anyConfident = ownConfident + enemyFrame.filter((r) => r.hero).length;
     const calibration: DetectionResult["calibration"] = this.ownSeen
       ? this.swapped ? "swapped" : "ok"
-      : ownConfident >= 3 ? "bad" : "unverified";
+      : ownConfident >= 2 ? "ok" : anyConfident === 0 ? "bad" : "unverified";
 
     const enemySlots: SlotResult[] = enemyFrame.slice(0, 5).map((r, i) => {
       const st = this.streak[i];

@@ -218,7 +218,7 @@ function applyLock() {
   win.setFocusable(!locked);
   win.setResizable(!locked);
   if (!locked) win.focus();
-  win.webContents.send("overlay:mode", { locked, hotkeys: HOTKEY_LABELS, calibrated: Boolean(loadSettings().calibration) });
+  win.webContents.send("overlay:mode", { locked, hotkeys: HOTKEY_LABELS, calibrated: true }); // the top bar is located automatically now; manual calibration is only an override
   refreshTray();
 }
 
@@ -318,7 +318,7 @@ function refreshTray() {
       { label: locked ? "Unlock (move / resize)" : "Lock (click-through)", accelerator: HOTKEYS.lock, click: toggleLock },
       { label: "Ask the AI coach now", accelerator: HOTKEYS.ask, click: quickAsk },
       { type: "separator" },
-      { label: loadSettings().calibration ? "Recalibrate enemy detection…" : "Set up enemy detection…", click: () => void calibrate() },
+      { label: loadSettings().calibration ? "Adjust enemy detection (manual)…" : "Adjust enemy detection (optional)…", click: () => void calibrate() },
       { label: "Open full dashboard", click: () => shell.openExternal(BASE) },
       { label: "Open server log", click: () => void shell.openPath(serverLogFile()) },
       ...(process.platform === "win32"
@@ -368,6 +368,32 @@ const SLOT_W = 48;
 const SLOT_H = 27;
 let detecting = false;
 
+// Where the ten top-bar portraits are, with no setup. Measured in-game at 2560x1440: Radiant x 725-1140,
+// Dire x 1420-1835 (symmetric about the centre), portraits y 4-52. Dota's HUD scales with screen height, so
+// offsets are kept in units of screen height from the centre line; that carries over to other resolutions.
+// Rows are taken at y 6-50 (clear of the team-colour strip and rank chevron), which matched best on real captures.
+const TOPBAR = { inner: 140 / 1440, outer: 555 / 1440, top: 6 / 1440, bottom: 50 / 1440 };
+/** Each slot loses this share of its width on both sides: the portraits are slanted at the edges */
+const SLOT_INSET = 0.1;
+
+/** Portrait rows for a display, as fractions of the screen (what the manual calibration also stores) @returns {Calibration} */
+function autoCalibration(display) {
+  const { width: W, height: H } = display.size;
+  const span = ((TOPBAR.outer - TOPBAR.inner) * H) / W;
+  const y = TOPBAR.top;
+  const h = TOPBAR.bottom - TOPBAR.top;
+  return {
+    radiant: { x: 0.5 - (TOPBAR.outer * H) / W, y, w: span, h },
+    dire: { x: 0.5 + (TOPBAR.inner * H) / W, y, w: span, h },
+    displayId: display.id,
+  };
+}
+
+/** A manual calibration wins; otherwise the computed one for the display the overlay sits on (Dota's screen) */
+function activeCalibration() {
+  return loadSettings().calibration ?? autoCalibration(targetDisplay());
+}
+
 /** The display the user calibrated on, or the one the overlay sits on */
 function targetDisplay() {
   const id = loadSettings().calibration?.displayId;
@@ -401,18 +427,19 @@ function toRgbBase64(img) {
 function slots(shot, r) {
   const { width, height } = shot.getSize();
   const slotW = (r.w * width) / 5;
+  const inset = slotW * SLOT_INSET;
   return Array.from({ length: 5 }, (_, i) =>
     toRgbBase64(
       shot
-        .crop({ x: Math.round(r.x * width + i * slotW), y: Math.round(r.y * height), width: Math.max(1, Math.round(slotW)), height: Math.max(1, Math.round(r.h * height)) })
+        .crop({ x: Math.round(r.x * width + i * slotW + inset), y: Math.round(r.y * height), width: Math.max(1, Math.round(slotW - 2 * inset)), height: Math.max(1, Math.round(r.h * height)) })
         .resize({ width: SLOT_W, height: SLOT_H, quality: "good" }),
     ),
   );
 }
 
 async function detectionTick() {
-  const cal = loadSettings().calibration;
-  if (!cal || detecting) return;
+  if (detecting) return;
+  const cal = activeCalibration();
   detecting = true;
   try {
     const status = await (await fetch(`${BASE}/api/vision/status`, { signal: AbortSignal.timeout(1500) })).json();
