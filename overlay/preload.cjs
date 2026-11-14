@@ -19,6 +19,10 @@ contextBridge.exposeInMainWorld("dotaOverlay", {
     ipcRenderer.on("overlay:visibility", listener);
     return () => ipcRenderer.removeListener("overlay:visibility", listener);
   },
+  /** Pointer over the grab handle: let the locked window take mouse input so it can be dragged @param {boolean} on */
+  setInteractive(on) {
+    ipcRenderer.send("overlay:interactive", Boolean(on));
+  },
   /** Ask the window to match the content's height, so nothing gets cut off @param {number} px */
   fitHeight(px) {
     if (typeof px === "number" && Number.isFinite(px)) ipcRenderer.send("overlay:height", Math.round(px));

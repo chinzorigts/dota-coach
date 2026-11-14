@@ -116,6 +116,18 @@ export function Overlay() {
 
   return (
     <div ref={rootRef} className={`ov ${locked ? "locked" : "unlocked"}`} style={style}>
+      {locked && bridge()?.setInteractive && (
+        // Drag from here any time; the rest of the overlay stays click-through. Hovering makes it take the mouse.
+        <div
+          className="ov-grip"
+          title="Drag to move (tray menu: Move overlay to…)"
+          aria-label="Drag to move the overlay"
+          onMouseEnter={() => bridge()?.setInteractive?.(true)}
+          onMouseLeave={() => bridge()?.setInteractive?.(false)}
+        >
+          <i aria-hidden />
+        </div>
+      )}
       {!locked && (
         <div className="ov-handle">
           <span>Drag to move, resize from the edges</span>

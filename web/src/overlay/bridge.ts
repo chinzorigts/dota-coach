@@ -11,6 +11,8 @@ export interface OverlayBridge {
   onVisibility?(cb: (e: { visible: boolean }) => void): () => void;
   /** Older overlays don't have it */
   fitHeight?: (px: number) => void;
+  /** Pointer over the grab handle (locked mode): accept mouse input so the window can be dragged */
+  setInteractive?: (on: boolean) => void;
 }
 
 declare global {

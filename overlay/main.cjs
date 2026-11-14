@@ -81,6 +81,48 @@ function defaultBounds() {
   return { x: area.x + area.width - width - 16, y: area.y + 120, width, height };
 }
 
+/**
+ * One-click spots, picked to stay clear of Dota's HUD: the top bar (centre top), minimap (bottom left) and
+ * the hero/item panel (bottom centre/right). Keeps the current size and display.
+ * @param {"top-right" | "top-left" | "right" | "left"} spot
+ */
+function moveTo(spot) {
+  if (!win) return;
+  const area = screen.getDisplayMatching(win.getBounds()).workArea;
+  const { width, height } = win.getBounds();
+  const m = 16;
+  const top = area.y + Math.round(area.height * 0.08); // below the top bar's clock/score row
+  const mid = area.y + Math.round((area.height - height) * 0.42);
+  const pos = {
+    "top-right": { x: area.x + area.width - width - m, y: top },
+    "top-left": { x: area.x + m, y: top },
+    right: { x: area.x + area.width - width - m, y: mid },
+    left: { x: area.x + m, y: mid },
+  }[spot];
+  win.setBounds({ ...pos, width, height });
+  saveBounds(win.getBounds());
+}
+
+/** Same spot on the next monitor (relative position kept) */
+function moveToNextDisplay() {
+  if (!win) return;
+  const displays = screen.getAllDisplays();
+  if (displays.length < 2) return;
+  const b = win.getBounds();
+  const cur = screen.getDisplayMatching(b);
+  const next = displays[(displays.findIndex((d) => d.id === cur.id) + 1) % displays.length];
+  const fx = (b.x - cur.workArea.x) / cur.workArea.width;
+  const fy = (b.y - cur.workArea.y) / cur.workArea.height;
+  const a = next.workArea;
+  win.setBounds({
+    x: Math.round(a.x + Math.min(fx * a.width, a.width - b.width)),
+    y: Math.round(a.y + Math.min(fy * a.height, a.height - b.height)),
+    width: b.width,
+    height: b.height,
+  });
+  saveBounds(win.getBounds());
+}
+
 /** Saved bounds only count if they are still on a connected display (monitors change) */
 function initialBounds() {
   const saved = loadSettings().bounds;
@@ -273,6 +315,14 @@ function createWindow() {
     if (Math.abs(target - h) > 4) win.setSize(w, target);
   });
 
+  // The grab handle: while the pointer is over it, the locked window takes mouse input so it can be dragged;
+  // everywhere else clicks keep passing through to the game. It never takes keyboard focus (focusable stays off).
+  ipcMain.removeAllListeners("overlay:interactive");
+  ipcMain.on("overlay:interactive", (e, on) => {
+    if (!win || e.sender !== win.webContents || !locked) return;
+    win.setIgnoreMouseEvents(!on, { forward: true });
+  });
+
   win.on("closed", () => {
     win = null;
   });
@@ -325,12 +375,23 @@ function refreshTray() {
         ? [{ label: "Start with Windows", type: /** @type {const} */ ("checkbox"), checked: autostartEnabled(), click: () => setAutostart(!autostartEnabled()) }]
         : []),
       {
-        label: "Reset position",
-        click: () => {
-          if (!win) return;
-          win.setBounds(defaultBounds());
-          saveBounds(win.getBounds());
-        },
+        label: "Move overlay to",
+        submenu: [
+          { label: "Top right", click: () => moveTo("top-right") },
+          { label: "Top left", click: () => moveTo("top-left") },
+          { label: "Right, middle", click: () => moveTo("right") },
+          { label: "Left, middle", click: () => moveTo("left") },
+          ...(screen.getAllDisplays().length > 1 ? [{ type: /** @type {const} */ ("separator") }, { label: "Other monitor", click: moveToNextDisplay }] : []),
+          { type: /** @type {const} */ ("separator") },
+          {
+            label: "Reset position",
+            click: () => {
+              if (!win) return;
+              win.setBounds(defaultBounds());
+              saveBounds(win.getBounds());
+            },
+          },
+        ],
       },
       { type: "separator" },
       { label: "Quit Dota Coach overlay", click: () => app.quit() },

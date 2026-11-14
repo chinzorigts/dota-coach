@@ -488,3 +488,18 @@ button.link { background: none; border: 0; padding: 0; color: var(--gold); curso
 .ov-recent-g.lost b { color: var(--dire); }
 .ov-recent-g.lost img { opacity: 0.6; }
 .ov-recent-sum { color: var(--muted); font-size: 11px; margin-left: 2px; }
+
+/* ── grab handle (move while locked) ──────────────────────────── */
+.ov { position: relative; }
+.ov-grip {
+  position: absolute; top: 4px; right: 4px; z-index: 2;
+  width: 22px; height: 22px; display: grid; place-items: center; border-radius: 5px;
+  color: rgb(212 167 58 / 0.45); cursor: grab; -webkit-app-region: drag;
+  transition: background 0.15s, color 0.15s;
+}
+.ov-grip i { font-style: normal; font-size: 14px; line-height: 1; }
+.ov-grip:hover { background: rgb(212 167 58 / 0.18); color: var(--gold); }
+/* the handle sits as a small bar centred on the top edge, clear of the rows' status pills */
+.ov.locked:has(.ov-grip) { padding-top: 14px; }
+.ov-grip { top: 2px; right: auto; left: 50%; transform: translateX(-50%); width: 44px; height: 10px; border-radius: 5px; }
+.ov-grip i { display: block; width: 26px; height: 3px; border-radius: 2px; background: currentColor; font-size: 0; }
