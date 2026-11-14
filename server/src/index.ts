@@ -18,8 +18,9 @@ const advisor = new Advisor({
       triggers: ai.triggers,
     };
   },
-  call: makeClaudeCaller(() => ({
-    model: settings.get().ai.model,
+  call: makeClaudeCaller((reason) => ({
+    // Your typed questions get the main model; everything automatic gets the faster live model
+    model: reason === "manual" ? settings.get().ai.model : settings.get().ai.liveModel,
     effort: settings.get().ai.effort,
     apiKey: settings.resolvedKey(),
   })),

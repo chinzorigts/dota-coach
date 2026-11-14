@@ -115,21 +115,39 @@ export function Overlay() {
             return <p className="ov-offplan">Bought {p.name}{was ? ` over ${was}` : ""}: plan updated</p>;
           })()}
 
-          {show("skill") && r.skills.next && (
-            <div className="ov-row skill">
-              {r.skills.next.kind === "ability" ? (
-                <Img src={abilityImg(r.skills.next.key)} label={state.names.abilities[r.skills.next.key] ?? r.skills.next.name} width={32} height={32} />
-              ) : (
-                <span className="ov-star" aria-hidden>★</span>
-              )}
-              <div className="ov-main">
-                <strong>{state.names.abilities[r.skills.next.key] ?? r.skills.next.name}</strong>
-                {r.skills.next.options?.length ? (
-                  <small>{r.skills.next.options.map((o) => o.name).join(" / ")}</small>
-                ) : null}
+          {show("skill") && (r.skills.next || r.skills.upcoming) && (() => {
+            // Its own box, apart from items: the point to spend now, or what to take at the next level
+            const sk = r.skills.next ?? r.skills.upcoming!;
+            const now = Boolean(r.skills.next);
+            const order = r.skills.priority.slice(0, 3);
+            return (
+              <div className={`ov-skill ${now ? "now" : ""}`}>
+                <div className="ov-row skill">
+                  {sk.kind === "ability" ? (
+                    <Img src={abilityImg(sk.key)} label={state.names.abilities[sk.key] ?? sk.name} width={32} height={32} />
+                  ) : (
+                    <span className="ov-star" aria-hidden>★</span>
+                  )}
+                  <div className="ov-main">
+                    <small className="ov-skill-when">{now ? `Skill point${r.skills.unspent > 1 ? ` ×${r.skills.unspent}` : ""}` : `At level ${r.skills.upcoming!.atLevel}`}</small>
+                    <strong>{state.names.abilities[sk.key] ?? sk.name}</strong>
+                    {sk.options?.length ? <small>{sk.options.map((o) => o.name).join(" / ")}</small> : null}
+                  </div>
+                </div>
+                {order.length > 1 && (
+                  <div className="ov-skill-order" aria-label="Skill maxing order">
+                    {order.map((k, i) => (
+                      <span key={k}>
+                        {i > 0 && <i aria-hidden>›</i>}
+                        <Img src={abilityImg(k)} label={state.names.abilities[k] ?? k} width={18} height={18} />
+                      </span>
+                    ))}
+                    <small>max order</small>
+                  </div>
+                )}
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {show("alerts") && r.alerts.filter((a) => a.level === "danger").slice(0, 2).map((a) => (
             <p key={a.id} className="ov-alert">{a.text}</p>

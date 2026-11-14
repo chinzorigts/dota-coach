@@ -201,7 +201,18 @@ export function Settings({ onClose }: { onClose: () => void }) {
           hint="Off: only the rules and stats engine runs. Nothing is sent to the API" />
 
         <fieldset className="set-group" disabled={ro || !s.ai.enabled}>
-          <legend>Model</legend>
+          <legend>Model for in-game advice</legend>
+          {view.options.models.map((m) => (
+            <label key={m.id} className="set-radio">
+              <input type="radio" name="liveModel" checked={s.ai.liveModel === m.id} onChange={() => change({ ai: { liveModel: m.id } })} />
+              <span>{m.label}<small>{m.note}</small></span>
+            </label>
+          ))}
+          <small className="muted">Used for automatic advice after picks, deaths and purchases, where a quick answer matters most.</small>
+        </fieldset>
+
+        <fieldset className="set-group" disabled={ro || !s.ai.enabled}>
+          <legend>Model for your questions</legend>
           {view.options.models.map((m) => (
             <label key={m.id} className="set-radio">
               <input type="radio" name="model" checked={s.ai.model === m.id} onChange={() => change({ ai: { model: m.id } })} />

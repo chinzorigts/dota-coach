@@ -26,7 +26,10 @@ export type OverlaySection = (typeof OVERLAY_SECTIONS)[number];
 export interface Settings {
   ai: {
     enabled: boolean;
+    /** For questions you type */
     model: string;
+    /** For automatic in-game advice (hero pick, deaths, purchases, 5-minute checks), where speed matters most */
+    liveModel: string;
     effort: Effort;
     autoIntervalSec: number;
     triggers: { hero: boolean; death: boolean; periodic: boolean; enemies: boolean; purchase: boolean };
@@ -61,6 +64,8 @@ export function defaultSettings(): Settings {
     ai: {
       enabled: process.env.COACH_AI !== "off",
       model,
+      // Measured: Opus ~6s, Sonnet ~3s for an advice-sized answer
+      liveModel: "claude-sonnet-5-5",
       effort,
       autoIntervalSec: clamp(config.aiMinIntervalSec, 30, 600),
       triggers: { hero: true, death: true, periodic: true, enemies: true, purchase: true },
@@ -111,6 +116,7 @@ export function mergeSettings(base: Settings, patch: unknown): Settings {
     ai: {
       enabled: bool(ai.enabled, base.ai.enabled),
       model: oneOf(ai.model, MODELS.map((m) => m.id), base.ai.model as (typeof MODELS)[number]["id"]),
+      liveModel: oneOf(ai.liveModel, MODELS.map((m) => m.id), (base.ai.liveModel ?? "claude-sonnet-5-5") as (typeof MODELS)[number]["id"]),
       effort: oneOf(ai.effort, EFFORTS, base.ai.effort),
       autoIntervalSec: num(ai.autoIntervalSec, base.ai.autoIntervalSec, 30, 600, 5),
       triggers: flags(ai.triggers, ["hero", "death", "periodic", "enemies", "purchase"] as const, base.ai.triggers),

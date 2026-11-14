@@ -3,7 +3,7 @@ import { getItem } from "../data/constants.js";
 import type { ItemPopularity } from "../data/opendota.js";
 import { buildAlerts, type AlertPrefs } from "./alerts.js";
 import { inferRole, ownedItems, phaseOf, recommendItems } from "./items.js";
-import { recommendSkill } from "./skills.js";
+import { recommendSkill, upcomingSkill } from "./skills.js";
 import { buildTimers } from "./timers.js";
 import type { CoachReport, RolePref } from "./types.js";
 
@@ -27,7 +27,7 @@ export function buildReport(s: GameSnapshot, ctx: EngineContext): CoachReport {
     aiItems: ctx.ai?.items ?? [],
     skipped: ctx.skipped,
   });
-  const skills = recommendSkill(s, ctx.ai?.skillPriority ?? null);
+  const skills = { ...recommendSkill(s, ctx.ai?.skillPriority ?? null), upcoming: upcomingSkill(s, ctx.ai?.skillPriority ?? null) };
   const p = s.player;
   const minutes = Math.max(s.clockTime / 60, 1 / 60);
   const itemValue = ownedItems(s).reduce(

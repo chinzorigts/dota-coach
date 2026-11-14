@@ -31,10 +31,12 @@ export interface AdvisorStatus {
   pending: TriggerReason | null;
   error: string | null;
   advice: AiAdvice | null;
+  /** How long the last answer took, for the panel ("answered in 3.1s") */
+  lastMs?: number;
 }
 
 /** The actual API call. Tests swap in a fake. */
-export type AdviceCaller = (payload: unknown) => Promise<Omit<AiAdvice, "at" | "clock" | "reason" | "question">>;
+export type AdviceCaller = (payload: unknown, reason?: TriggerReason) => Promise<Omit<AiAdvice, "at" | "clock" | "reason" | "question">>;
 
 interface TriggerMemory {
   key: string | null; // matchId + hero
@@ -91,10 +93,11 @@ function clientFor(apiKey: string | null) {
   return apiKey ? new Anthropic({ apiKey }) : new Anthropic();
 }
 
-export function makeClaudeCaller(cfg: () => { model: string; effort: EffortLevel; apiKey: string | null }): AdviceCaller {
+/** `cfg` gets the trigger, so automatic in-game calls can use a faster model than questions you type */
+export function makeClaudeCaller(cfg: (reason?: TriggerReason) => { model: string; effort: EffortLevel; apiKey: string | null }): AdviceCaller {
   let cached: { key: string | null; client: Anthropic } | null = null;
-  return async (payload) => {
-    const { model, effort, apiKey } = cfg();
+  return async (payload, reason) => {
+    const { model, effort, apiKey } = cfg(reason);
     if (!cached || cached.key !== apiKey) cached = { key: apiKey, client: clientFor(apiKey) };
     const client = cached.client;
     const response = await client.beta.messages.create({
@@ -226,7 +229,10 @@ export class Advisor {
     this.state = { ...this.state, pending: reason, error: null };
     this.emit();
     try {
-      const raw = await this.opts.call!(buildUserPayload(s, report, enemies, question, bought));
+      const started = this.now();
+      const raw = await this.opts.call!(buildUserPayload(s, report, enemies, question, bought), reason);
+      this.state = { ...this.state, lastMs: this.now() - started };
+      console.log(`[ai] ${reason} advice in ${((this.now() - started) / 1000).toFixed(1)}s`);
       this.state = {
         ...this.state,
         pending: null,

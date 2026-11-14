@@ -48,6 +48,8 @@ export interface CoachReport {
   skills: {
     unspent: number;
     next: SkillRec | null;
+    /** What to take at your next level-up, when no point is waiting now */
+    upcoming: (SkillRec & { atLevel: number }) | null;
     priority: string[];
     prioritySource: "ai" | "default";
   };

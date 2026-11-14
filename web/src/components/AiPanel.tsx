@@ -66,7 +66,10 @@ export function AiPanel({ ai, names }: { ai: CoachState["ai"]; names: CoachState
               ))}
             </div>
           )}
-          <small className="meta">{REASON[a.reason]}, at {clock(a.clock)}</small>
+          <small className="meta">
+            {REASON[a.reason]}, at {clock(a.clock)}
+            {ai.lastMs ? ` · answered in ${(ai.lastMs / 1000).toFixed(1)}s` : ""}
+          </small>
         </>
       ) : (
         !ai.pending && <p className="muted">The first read starts once your hero is locked in.</p>
