@@ -29,6 +29,9 @@ import { ownedItems } from "./engine/items.js";
  */
 export const GSI_STALE_MS = 75_000;
 
+/** Stop top-bar capture after this much game time (see visionWanted) */
+const VISION_GIVE_UP_SEC = 15 * 60;
+
 /** A courier trip from fountain to lane rarely takes longer than this */
 const TRANSIT_MS = 90_000;
 
@@ -587,7 +590,9 @@ export class CoachState {
     const s = this.snapshot;
     return Boolean(
       this.settings.get().detection.enabled && s?.hero && s.team && s.inProgress &&
-        this.enemySource !== "manual" && this.enemySource !== "gsi" && this.enemies.length < 5,
+        this.enemySource !== "manual" && this.enemySource !== "gsi" && this.enemies.length < 5 &&
+        // All ten portraits are there from the horn; what isn't recognised by 15:00 won't be by grabbing more
+        s.clockTime < VISION_GIVE_UP_SEC,
     );
   }
 

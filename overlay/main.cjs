@@ -363,7 +363,16 @@ function setAutostart(on) {
 // match them against the hero art. Nothing leaves the machine, and capture stops once the lineup is
 // known or the user has typed it in.
 
-const DETECT_INTERVAL_MS = 2000;
+// Kept light so the game never feels it: the screen is grabbed at half resolution (a quarter of the pixels; the
+// matcher only looks at a 24x14 grid per portrait, so detail beyond that is wasted), every 4 seconds, and only
+// while the server still wants enemies. When several grabs in a row change nothing, it slows to every 12s.
+const DETECT_INTERVAL_MS = 4000;
+const DETECT_SCALE = 0.5;
+const IDLE_AFTER = 6; // grabs without a new enemy before slowing down
+const IDLE_EVERY = 3; // then grab on one tick in three
+let unchangedGrabs = 0;
+let skipTick = 0;
+let lastEnemyCount = -1;
 const SLOT_W = 48;
 const SLOT_H = 27;
 let detecting = false;
@@ -400,11 +409,11 @@ function targetDisplay() {
   return screen.getAllDisplays().find((d) => d.id === id) ?? (win ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay());
 }
 
-/** Full-resolution screenshot of one display */
-async function captureDisplay(display = targetDisplay()) {
+/** Screenshot of one display; scale < 1 asks the compositor for a smaller image (much cheaper to copy) */
+async function captureDisplay(display = targetDisplay(), scale = 1) {
   const size = {
-    width: Math.round(display.size.width * display.scaleFactor),
-    height: Math.round(display.size.height * display.scaleFactor),
+    width: Math.round(display.size.width * display.scaleFactor * scale),
+    height: Math.round(display.size.height * display.scaleFactor * scale),
   };
   const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: size });
   const src = sources.find((s) => s.display_id === String(display.id)) ?? sources[0];
@@ -443,19 +452,31 @@ async function detectionTick() {
   detecting = true;
   try {
     const status = await (await fetch(`${BASE}/api/vision/status`, { signal: AbortSignal.timeout(1500) })).json();
-    if (!status.wanted) return;
-    const { image } = await captureDisplay();
+    if (!status.wanted) {
+      unchangedGrabs = 0;
+      lastEnemyCount = -1;
+      return;
+    }
+    // Nothing new for a while (e.g. a hero we can't recognise): grab less often
+    if (unchangedGrabs >= IDLE_AFTER && skipTick++ % IDLE_EVERY !== 0) return;
+    const { image } = await captureDisplay(targetDisplay(), DETECT_SCALE);
     if (!image || image.isEmpty()) {
       // macOS returns an empty image until Screen Recording permission is granted
       console.warn("[overlay] screen capture returned nothing. On macOS allow Screen Recording for this app.");
       return;
     }
-    await fetch(`${BASE}/api/vision/topbar`, {
+    const res = await fetch(`${BASE}/api/vision/topbar`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ w: SLOT_W, h: SLOT_H, radiant: slots(image, cal.radiant), dire: slots(image, cal.dire) }),
       signal: AbortSignal.timeout(10_000), // the first call downloads hero portraits
     });
+    const count = ((await res.json().catch(() => ({})))?.enemies ?? []).length;
+    if (count !== lastEnemyCount) {
+      lastEnemyCount = count;
+      unchangedGrabs = 0;
+      skipTick = 0;
+    } else unchangedGrabs++;
   } catch {
     /* server busy or restarting; try again next tick */
   } finally {
