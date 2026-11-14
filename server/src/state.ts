@@ -1,7 +1,9 @@
 import type { RawGsi } from "./gsi/types.js";
 import { normalize, type GameSnapshot } from "./gsi/normalize.js";
 import { getAbility, getHero, getItem } from "./data/constants.js";
-import { getItemPopularity, type ItemPopularity } from "./data/opendota.js";
+import { getItemPopularity, getPlayerSummary, type ItemPopularity, type PlayerSummary } from "./data/opendota.js";
+import type { LobbyInfo, TeamSide } from "./matchlog/parser.js";
+import type { WatcherStatus } from "./matchlog/watcher.js";
 import { buildReport, type CoachReport, type RolePref } from "./engine/index.js";
 import type { Advisor } from "./ai/advisor.js";
 import { EnemyDetector, type DetectionResult, type Side, type SlotResult } from "./vision/detector.js";
@@ -22,6 +24,33 @@ export interface DetectionStatus {
 
 const emptyDetection = (): DetectionStatus => ({ calibration: null, slots: [], lastAt: 0, error: null });
 
+/** A lobby line older than this was left over from an earlier session; don't show it as the current match. */
+const LOBBY_MAX_AGE_MS = 3 * 60 * 60 * 1000;
+
+export interface MatchPlayerView {
+  slot: number;
+  accountId: number;
+  isMe: boolean;
+  /** Index into the lobby's party list, so the UI can mark players who queued together */
+  party: number | null;
+  status: "loading" | "ok" | "failed";
+  stats: (Omit<PlayerSummary, "topHeroes"> & { topHeroes: { heroId: number; name: string | null; games: number; wins: number }[] }) | null;
+}
+
+/**
+ * Who is in the match, from server_log.txt. Region and ping are deliberately absent: neither the log nor GSI
+ * carries a region, and the matchmaking server is reached through Valve's SDR relays (the log only names a
+ * game-server Steam ID), so there is no address to measure a ping against.
+ */
+export interface MatchInfoView {
+  lobbyId: string;
+  gameMode: string;
+  detectedAt: number | null;
+  myTeam: TeamSide | null;
+  allies: MatchPlayerView[];
+  enemies: MatchPlayerView[];
+}
+
 export class CoachState {
   snapshot: GameSnapshot | null = null;
   report: CoachReport | null = null;
@@ -35,12 +64,18 @@ export class CoachState {
   lastGsiAt = 0;
   private matchId: string | null = null;
   private listeners = new Set<() => void>();
+  /** Latest lobby from server_log.txt, independent of the GSI match id (the lobby line is written before GSI has one) */
+  lobby: LobbyInfo | null = null;
+  private playerStats = new Map<number, PlayerSummary | "loading" | null>();
+  /** Set by index.ts once the server_log watcher runs */
+  matchLogStatus: () => WatcherStatus | null = () => null;
 
   constructor(
     private advisor: Advisor,
     private loadPopularity: (heroId: number) => Promise<ItemPopularity | null> = getItemPopularity,
     private loadBank: () => Promise<{ bank: TemplateBank }> = getTemplateBank,
     readonly settings: SettingsStore = new SettingsStore(null),
+    private loadPlayer: (accountId: number) => Promise<PlayerSummary | null> = getPlayerSummary,
   ) {
     this.rolePref = settings.get().coach.defaultRole;
     let lastDefaultRole = this.rolePref;
@@ -99,6 +134,70 @@ export class CoachState {
       void this.advisor.onSnapshot(this.snapshot, this.report, this.enemies);
     }
     this.emit();
+  }
+
+  /**
+   * A new lobby from server_log.txt. Only account IDs are known at this point (picks come later), so this never
+   * touches `enemies` (heroes from GSI / vision / manual pick); the two are shown side by side.
+   */
+  ingestLobby(lobby: LobbyInfo, now = Date.now()) {
+    if (lobby.at !== null && now - lobby.at > LOBBY_MAX_AGE_MS) return;
+    if (lobby.lobbyId === this.lobby?.lobbyId) return;
+    this.lobby = lobby;
+    this.playerStats.clear();
+    this.emit();
+    // Enemies first: they are what the panel is for, and OpenDota requests are queued one by one
+    const mine = this.myTeam();
+    const ordered = [...lobby.players].sort((a, b) => Number(a.team === mine) - Number(b.team === mine));
+    for (const p of ordered) {
+      this.playerStats.set(p.accountId, "loading");
+      this.loadPlayer(p.accountId)
+        .catch(() => null)
+        .then((s) => {
+          if (this.lobby !== lobby) return;
+          this.playerStats.set(p.accountId, s);
+          this.emit();
+        });
+    }
+  }
+
+  /** Our side: by our account ID in the lobby when GSI has sent it, else the team GSI reports */
+  private myTeam(): TeamSide | null {
+    const me = this.snapshot?.player?.accountId;
+    const fromLobby = me ? this.lobby?.players.find((p) => p.accountId === me)?.team : null;
+    return fromLobby ?? this.snapshot?.team ?? null;
+  }
+
+  matchInfo(): MatchInfoView | null {
+    const lobby = this.lobby;
+    if (!lobby || !this.settings.get().matchInfo.enabled) return null;
+    const myTeam = this.myTeam();
+    const me = this.snapshot?.player?.accountId ?? null;
+    const view = (p: LobbyInfo["players"][number]): MatchPlayerView => {
+      const s = this.playerStats.get(p.accountId);
+      const party = lobby.parties.findIndex((members) => members.includes(p.accountId));
+      return {
+        slot: p.slot,
+        accountId: p.accountId,
+        isMe: p.accountId === me,
+        party: party >= 0 ? party : null,
+        status: s === "loading" || s === undefined ? "loading" : s ? "ok" : "failed",
+        stats:
+          s && s !== "loading"
+            ? { ...s, topHeroes: s.topHeroes.map((h) => ({ ...h, name: getHero(h.heroId)?.name ?? null })) }
+            : null,
+      };
+    };
+    const sided = lobby.players.filter((p) => p.team);
+    return {
+      lobbyId: lobby.lobbyId,
+      gameMode: lobby.gameMode,
+      detectedAt: lobby.at,
+      myTeam,
+      // Side unknown (no GSI yet): fall back to Radiant/Dire; the UI labels them by myTeam === null
+      allies: myTeam ? sided.filter((p) => p.team === myTeam).map(view) : sided.filter((p) => p.team === "radiant").map(view),
+      enemies: myTeam ? sided.filter((p) => p.team !== myTeam).map(view) : sided.filter((p) => p.team === "dire").map(view),
+    };
   }
 
   /** From the UI. Clearing the list hands control back to auto-detection. */
@@ -197,6 +296,8 @@ export class CoachState {
       enemies: this.enemies,
       enemySource: this.enemySource,
       detection: { ...this.detection, wanted: this.visionWanted() },
+      match: this.matchInfo(),
+      matchLog: this.matchLogStatus(),
       // Public settings only: the API key itself never leaves the server
       settings: this.settings.get(),
       apiKey: this.settings.keyStatus(),

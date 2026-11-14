@@ -1,4 +1,5 @@
 import type { RawGsi, RawItem } from "./types.js";
+import { accountIdFromSteamId64 } from "../matchlog/parser.js";
 
 export interface AbilityState {
   slot: number;
@@ -53,6 +54,7 @@ export interface GameSnapshot {
   roshan: { state: string; endSeconds: number } | null;
   player: {
     name: string;
+    accountId: number | null;
     kills: number;
     deaths: number;
     assists: number;
@@ -179,6 +181,8 @@ export function normalize(raw: RawGsi, now = Date.now()): GameSnapshot {
     player: p
       ? {
           name: p.name ?? "",
+          // 32-bit account ID, used to find which side of the server_log lobby is ours
+          accountId: accountIdFromSteamId64(p.steamid),
           kills: n(p.kills),
           deaths: n(p.deaths),
           assists: n(p.assists),

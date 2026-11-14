@@ -14,7 +14,7 @@ export const MODELS = [
 ] as const;
 export const EFFORTS = ["low", "medium", "high"] as const;
 export const TIMER_IDS = ["bounty", "power", "wisdom", "lotus", "daynight", "stack", "roshan"] as const;
-export const OVERLAY_SECTIONS = ["item", "skill", "alerts", "enemies", "timers", "ai"] as const;
+export const OVERLAY_SECTIONS = ["item", "skill", "alerts", "enemies", "opponents", "timers", "ai"] as const;
 
 export type Effort = (typeof EFFORTS)[number];
 export type TimerId = (typeof TIMER_IDS)[number];
@@ -40,6 +40,8 @@ export interface Settings {
     scale: number;
   };
   detection: { enabled: boolean };
+  /** Lobby players from server_log.txt (see matchlog/parser.ts for why this is usually unavailable). "" = auto-detect */
+  matchInfo: { enabled: boolean; logPath: string };
 }
 
 export function defaultSettings(): Settings {
@@ -65,6 +67,7 @@ export function defaultSettings(): Settings {
       scale: 1,
     },
     detection: { enabled: true },
+    matchInfo: { enabled: true, logPath: "" },
   };
 }
 
@@ -78,6 +81,7 @@ const num = (v: unknown, d: number, lo: number, hi: number, step = 1) =>
   typeof v === "number" && Number.isFinite(v) ? clamp(Math.round(v / step) * step, lo, hi) : d;
 const oneOf = <T extends string>(v: unknown, list: readonly T[], d: T): T =>
   typeof v === "string" && (list as readonly string[]).includes(v) ? (v as T) : d;
+const str = (v: unknown, d: string, max: number) => (typeof v === "string" && v.length <= max ? v.trim() : d);
 const flags = <K extends string>(v: unknown, keys: readonly K[], d: Record<K, boolean>) =>
   Object.fromEntries(keys.map((k) => [k, bool(isObj(v) ? v[k] : undefined, d[k])])) as Record<K, boolean>;
 
@@ -88,6 +92,7 @@ export function mergeSettings(base: Settings, patch: unknown): Settings {
   const coach = isObj(p.coach) ? p.coach : {};
   const overlay = isObj(p.overlay) ? p.overlay : {};
   const detection = isObj(p.detection) ? p.detection : {};
+  const matchInfo = isObj(p.matchInfo) ? p.matchInfo : {};
   return {
     ai: {
       enabled: bool(ai.enabled, base.ai.enabled),
@@ -108,6 +113,10 @@ export function mergeSettings(base: Settings, patch: unknown): Settings {
       scale: num(overlay.scale, base.overlay.scale, 0.8, 1.5, 0.05),
     },
     detection: { enabled: bool(detection.enabled, base.detection.enabled) },
+    matchInfo: {
+      enabled: bool(matchInfo.enabled, base.matchInfo.enabled),
+      logPath: str(matchInfo.logPath, base.matchInfo.logPath, 1000),
+    },
   };
 }
 

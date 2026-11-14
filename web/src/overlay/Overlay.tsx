@@ -3,6 +3,7 @@ import { useCoach, post } from "../useCoach";
 import { Img } from "../components/Img";
 import { abilityImg, clock, gold as fmt, heroIcon } from "../format";
 import { bridge, type OverlayMode } from "./bridge";
+import { OpponentsPanel } from "./OpponentsPanel";
 
 /**
  * Compact HUD drawn over the game. Everything here must be readable in a glance,
@@ -56,7 +57,11 @@ export function Overlay() {
       )}
 
       {!connected || !s?.hero || !r ? (
-        <p className="ov-idle">{!connected ? "Dota Coach: server offline" : "Dota Coach: waiting for a game"}</p>
+        <>
+          <p className="ov-idle">{!connected ? "Dota Coach: server offline" : "Dota Coach: waiting for a game"}</p>
+          {/* The lobby is known from match accept, before heroes are picked */}
+          {connected && state?.match && show("opponents") && <OpponentsPanel match={state.match} />}
+        </>
       ) : (
         <>
           {show("item") && r.items[0] && (() => {
@@ -105,6 +110,8 @@ export function Overlay() {
               {state.enemySource === "vision" && state.enemies.length < 5 && <small>detecting…</small>}
             </div>
           )}
+
+          {show("opponents") && state.match && state.match.enemies.length > 0 && <OpponentsPanel match={state.match} />}
 
           {show("timers") && r.timers.length > 0 && (
             <div className="ov-timers">

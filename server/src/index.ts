@@ -3,6 +3,7 @@ import { Advisor, makeClaudeCaller } from "./ai/advisor.js";
 import { CoachState } from "./state.js";
 import { createApp } from "./app.js";
 import { SettingsStore } from "./settings.js";
+import { ServerLogWatcher } from "./matchlog/watcher.js";
 
 // Settings come from the settings screen (saved in .data/), seeded from .env the first time
 const settings = new SettingsStore();
@@ -25,6 +26,21 @@ const advisor = new Advisor({
 });
 const state = new CoachState(advisor, undefined, undefined, settings);
 const { server } = createApp(state, advisor);
+
+// Lobby players from server_log.txt. Restarts when the path or the toggle changes in settings.
+const matchLog = new ServerLogWatcher((lobby) => state.ingestLobby(lobby));
+state.matchLogStatus = () => (settings.get().matchInfo.enabled ? matchLog.status : null);
+let matchLogKey = "";
+const syncMatchLog = () => {
+  const m = settings.get().matchInfo;
+  const key = m.enabled ? `on:${m.logPath}` : "off";
+  if (key === matchLogKey) return;
+  matchLogKey = key;
+  if (m.enabled) matchLog.start(m.logPath);
+  else matchLog.stop();
+};
+syncMatchLog();
+settings.onChange(syncMatchLog);
 
 server.listen(config.port, config.host, () => {
   const url = `http://${config.host === "0.0.0.0" ? "localhost" : config.host}:${config.port}`;

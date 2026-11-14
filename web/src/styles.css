@@ -233,6 +233,19 @@ html.overlay-root, html.overlay-root body { background: transparent; overflow: h
 .ov-enemies { display: flex; align-items: center; gap: 4px; }
 .ov-enemies img, .ov-enemies .img-fallback { border-radius: 3px; box-shadow: 0 0 0 1px rgb(207 75 62 / 0.6); }
 .ov-enemies small { color: var(--muted); font-size: 11px; margin-left: 4px; }
+.ov-opp { display: grid; gap: 2px; font-size: 12px; }
+.ov-opp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.ov-opp-head small, .ov-opp-muted { color: var(--muted); font-size: 11px; }
+.ov-opp-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: center; gap: 6px; }
+.ov-opp-row:has(.ov-opp-muted) { grid-template-columns: minmax(0, 1fr) auto; }
+.ov-opp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-opp-party { color: var(--gold); font-size: 10px; margin-right: 4px; }
+.ov-opp-rank { color: var(--muted); }
+.ov-opp-wr { font: 600 12px var(--f-num); font-variant-numeric: tabular-nums; min-width: 3ch; text-align: right; }
+.ov-opp-wr.hot { color: var(--dire); }
+.ov-opp-wr.cold { color: var(--radiant); }
+.ov-opp-heroes { display: flex; gap: 2px; min-width: 58px; }
+.ov-opp-heroes img, .ov-opp-heroes .img-fallback { border-radius: 2px; }
 .ov-timers { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
 .ov-timers b { font: 600 15px var(--f-num); color: var(--text); margin-left: 4px; font-variant-numeric: tabular-nums; }
 .ov-timers .soon b { color: var(--gold); }

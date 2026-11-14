@@ -12,7 +12,7 @@ export interface Snapshot {
   paused: boolean;
   team: "radiant" | "dire" | null;
   score: { radiant: number; dire: number };
-  player: { name: string; kills: number; deaths: number; assists: number; lastHits: number; denies: number; gold: number; gpm: number; xpm: number } | null;
+  player: { name: string; accountId: number | null; kills: number; deaths: number; assists: number; lastHits: number; denies: number; gold: number; gpm: number; xpm: number } | null;
   hero: {
     id: number; name: string; level: number; alive: boolean; respawnSeconds: number; buybackCost: number; buybackCooldown: number;
     health: number; maxHealth: number; healthPct: number; mana: number; maxMana: number; manaPct: number;
@@ -64,6 +64,8 @@ export interface CoachState {
     lastAt: number;
     error: string | null;
   };
+  match: MatchInfo | null;
+  matchLog: { path: string | null; exists: boolean; lastLobbyAt: number | null; error: string | null } | null;
   rolePref: "auto" | "core" | "support";
   settings: Settings;
   apiKey: ApiKeyStatus;
@@ -88,6 +90,33 @@ export interface Settings {
   };
   overlay: { sections: Record<string, boolean>; opacity: number; scale: number };
   detection: { enabled: boolean };
+  matchInfo: { enabled: boolean; logPath: string };
+}
+
+export interface MatchPlayer {
+  slot: number;
+  accountId: number;
+  isMe: boolean;
+  party: number | null;
+  status: "loading" | "ok" | "failed";
+  stats: {
+    name: string | null;
+    rank: string | null;
+    rankTier: number | null;
+    recent: { games: number; wins: number; losses: number; winRate: number | null };
+    topHeroes: { heroId: number; name: string | null; games: number; wins: number }[];
+    isPrivate: boolean;
+  } | null;
+}
+
+/** Lobby players from server_log.txt. No region/ping: the game doesn't expose them (see server/src/state.ts). */
+export interface MatchInfo {
+  lobbyId: string;
+  gameMode: string;
+  detectedAt: number | null;
+  myTeam: "radiant" | "dire" | null;
+  allies: MatchPlayer[];
+  enemies: MatchPlayer[];
 }
 
 export interface ApiKeyStatus {

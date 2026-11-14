@@ -15,6 +15,7 @@ const SECTION_LABELS: Record<string, string> = {
   skill: "Next skill",
   alerts: "Danger alerts",
   enemies: "Enemy heroes",
+  opponents: "Enemy players",
   timers: "Timers",
   ai: "AI summary",
 };
@@ -281,6 +282,19 @@ export function Settings({ onClose }: { onClose: () => void }) {
         <Toggle label="Detect enemy heroes from the top bar" checked={s.detection.enabled} disabled={ro}
           onChange={(v) => change({ detection: { enabled: v } })}
           hint="Needs the overlay running and a one-time setup from its tray menu (Set up enemy detection…)" />
+      </section>
+
+      <section className="panel set-section">
+        <h2>Match players</h2>
+        <Toggle label="Show enemy players' rank, win rate and heroes" checked={s.matchInfo.enabled} disabled={ro}
+          onChange={(v) => change({ matchInfo: { enabled: v } })}
+          hint="Reads player IDs from Dota's server_log.txt. Current Dota clients stopped writing that file in 2022, so this usually stays empty." />
+        <div className="set-range">
+          <label htmlFor="log-path">server_log.txt path</label>
+          <input id="log-path" type="text" spellCheck={false} disabled={ro} value={s.matchInfo.logPath}
+            placeholder="Auto-detect from Steam libraries" maxLength={1000}
+            onChange={(e) => change({ matchInfo: { logPath: e.target.value } })} />
+        </div>
       </section>
 
       {!ro && (
