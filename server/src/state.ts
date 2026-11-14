@@ -18,6 +18,11 @@ import {
 import { compareStats } from "./engine/benchmarks.js";
 import { bandForMmr, gameResultDelta, rankView, type RankView } from "./engine/rank.js";
 import { suggestPicks, type DraftView } from "./engine/draft.js";
+import { classifyPurchase, newItems, type Purchase } from "./engine/purchases.js";
+import { ownedItems } from "./engine/items.js";
+
+/** OpenDota usually has a finished match parsed within ~20 minutes */
+const ME_REFRESH_AFTER_GAME_MS = 20 * 60 * 1000;
 
 /** Applied MMR changes, kept so a match is never counted twice (even across restarts) and the last one can be undone */
 interface RankHistory {
@@ -93,6 +98,12 @@ export class CoachState {
   /** Hero averages and our own averages on the hero being played, for "you vs average" */
   private bench: { heroId: number; data: HeroBenchmarks | null | "loading" } | null = null;
   private totals: { key: string; data: PlayerHeroTotals | null | "loading" } | null = null;
+  /** What you bought this match, and the recommendations those purchases made redundant */
+  purchases: Purchase[] = [];
+  private skipped = new Set<string>();
+  /** Most copies of each item seen this match. Items riding the courier vanish from GSI for a while, so a
+   * purchase is a count going above this, not merely an item reappearing. */
+  private maxSeen = new Map<string, number>();
   /** Draft data, loaded on first use. Replaceable in tests. */
   draftDeps = { loadHeroStats: getHeroStats, loadMatchups: getMatchups };
   private heroStats: Map<number, HeroStat> | null | "loading" | undefined;
@@ -105,7 +116,7 @@ export class CoachState {
     private loadPopularity: (heroId: number) => Promise<ItemPopularity | null> = getItemPopularity,
     private loadBank: () => Promise<{ bank: TemplateBank }> = getTemplateBank,
     readonly settings: SettingsStore = new SettingsStore(null),
-    private loadPlayer: (accountId: number) => Promise<PlayerSummary | null> = getPlayerSummary,
+    private loadPlayer: (accountId: number, fresh?: boolean) => Promise<PlayerSummary | null> = getPlayerSummary,
     private loadBench: (heroId: number) => Promise<HeroBenchmarks | null> = getHeroBenchmarks,
     private loadTotals: (accountId: number, heroId: number) => Promise<PlayerHeroTotals | null> = getPlayerHeroTotals,
   ) {
@@ -145,6 +156,9 @@ export class CoachState {
       this.detector?.reset();
       this.detection = emptyDetection();
       this.advisor.reset();
+      this.purchases = [];
+      this.skipped.clear();
+      this.maxSeen.clear();
     }
 
     if (snap.hero && snap.hero.id !== this.popularityHero) {
@@ -162,10 +176,14 @@ export class CoachState {
     this.loadReferences(snap);
     this.loadMe(snap);
     this.applyGameResult(snap);
+    const bought = this.detectPurchases(snap);
     this.snapshot = snap;
     this.applyGsiLineup(snap);
     this.recompute();
     if (this.snapshot && this.report) {
+      const offPlan = bought.filter((p) => !p.followed);
+      // A different buy than suggested changes the plan: ask again now instead of at the next death or 5:00 mark
+      if (offPlan.length) void this.advisor.onPurchase(this.snapshot, this.report, this.enemies, offPlan);
       void this.advisor.onSnapshot(this.snapshot, this.report, this.enemies);
     }
     this.emit();
@@ -235,6 +253,32 @@ export class CoachState {
     };
   }
 
+  /** Compare the inventory with what we've seen this match; classify anything new against the last recommendations */
+  private detectPurchases(snap: GameSnapshot): Purchase[] {
+    if (!snap.hero) return [];
+    const owned = ownedItems(snap);
+    const counts = new Map<string, number>();
+    for (const k of owned) counts.set(k, (counts.get(k) ?? 0) + 1);
+    // The first snapshot of a match (or a mid-game restart) is the starting inventory, not a purchase
+    const first = this.maxSeen.size === 0;
+    const seenList = [...this.maxSeen].flatMap(([k, n]) => Array<string>(n).fill(k));
+    for (const [k, n] of counts) this.maxSeen.set(k, Math.max(n, this.maxSeen.get(k) ?? 0));
+    if (first) {
+      if (this.maxSeen.size === 0) this.maxSeen.set("__start__", 0); // remember we've started even with an empty bag
+      return [];
+    }
+    const recs = this.report?.items ?? [];
+    const out: Purchase[] = [];
+    for (const key of newItems(seenList, owned)) {
+      const p = classifyPurchase(key, recs, snap.clockTime);
+      if (!p) continue;
+      out.push(p);
+      for (const r of p.replaced) this.skipped.add(r);
+    }
+    if (out.length) this.purchases = [...this.purchases, ...out].slice(-20);
+    return out;
+  }
+
   /** Fetch the reference numbers once per hero (and once per account+hero); both are cached on disk too */
   private loadReferences(snap: GameSnapshot) {
     const heroId = snap.hero?.id;
@@ -284,39 +328,70 @@ export class CoachState {
     return raw && Array.isArray(raw.applied) ? raw : { applied: [] };
   }
 
-  /** After a finished game, move the typed-in MMR by ±perGame. Each match counts once. */
+  /**
+   * After a finished game, record ±perGame once per match. A typed-in MMR is moved directly; the automatic
+   * estimate adds the changes made since it was fetched, and is fetched again once OpenDota has had time to
+   * process the match.
+   */
   private applyGameResult(snap: GameSnapshot) {
     const r = this.settings.get().rank;
-    if (!r.autoAdjust || r.mmr === null || !snap.matchId || !snap.hero) return;
+    if (!r.autoAdjust || !snap.matchId || !snap.hero) return;
     const delta = gameResultDelta(snap.winTeam ?? undefined, snap.team, r.perGame);
     if (delta === null) return;
     const history = this.rankHistory();
     if (history.applied.some((a) => a.matchId === snap.matchId)) return;
     history.applied = [...history.applied, { matchId: snap.matchId, delta, at: Date.now() }].slice(-50);
     this.settings.saveData("rank.json", history);
-    this.settings.update({ rank: { mmr: Math.max(0, r.mmr + delta) } });
+    if (r.mmr !== null) this.settings.update({ rank: { mmr: Math.max(0, r.mmr + delta) } });
+    else this.emit();
+    const accountId = snap.player?.accountId;
+    if (accountId) {
+      clearTimeout(this.meRefresh);
+      this.meRefresh = setTimeout(() => this.refreshMe(accountId), ME_REFRESH_AFTER_GAME_MS);
+      this.meRefresh.unref?.();
+    }
+  }
+
+  private meRefresh: ReturnType<typeof setTimeout> | undefined;
+
+  /** Fetch our profile again past the caches (medal and estimate change after games) */
+  private refreshMe(accountId: number) {
+    this.loadPlayer(accountId, true)
+      .catch(() => null)
+      .then((s) => {
+        if (!s || this.me?.accountId !== accountId) return;
+        this.me = { accountId, summary: s };
+        this.emit();
+      });
   }
 
   /** Revert the last automatic change (e.g. it was an unranked game). The match stays marked as counted. */
   undoLastRankChange(): boolean {
     const history = this.rankHistory();
     const last = history.applied[history.applied.length - 1];
-    const mmr = this.settings.get().rank.mmr;
-    if (!last || last.delta === 0 || mmr === null) return false;
+    if (!last || last.delta === 0) return false;
     history.applied[history.applied.length - 1] = { ...last, delta: 0 };
     this.settings.saveData("rank.json", history);
-    this.settings.update({ rank: { mmr: Math.max(0, mmr - last.delta) } });
+    const mmr = this.settings.get().rank.mmr;
+    if (mmr !== null) this.settings.update({ rank: { mmr: Math.max(0, mmr - last.delta) } });
+    else this.emit();
     return true;
   }
 
   rank(): RankView {
     const r = this.settings.get().rank;
     const summary = this.me && this.me.summary !== "loading" ? this.me.summary : null;
-    const last = this.rankHistory().applied.at(-1);
+    const applied = this.rankHistory().applied;
+    const last = applied.at(-1);
+    // Games finished after OpenDota's numbers were fetched aren't in them yet
+    const since = summary?.fetchedAt ?? Infinity;
+    const offset = applied.filter((a) => a.at > since).reduce((sum, a) => sum + a.delta, 0);
     return rankView({
       mmr: r.mmr,
+      computedMmr: summary?.computedMmr ?? null,
       rankTier: summary?.rankTier ?? null,
       perGame: r.perGame,
+      offset,
       lastChange: last && last.delta !== 0 ? last : null,
     });
   }
@@ -465,6 +540,7 @@ export class CoachState {
       popularity: this.popularity,
       enemies: this.enemies,
       ai: advice ? { items: advice.next_items, skillPriority: advice.skill_priority } : null,
+      skipped: [...this.skipped],
       prefs: (() => {
         const c = this.settings.get().coach;
         return { lowHpPct: c.lowHpPct, goldAlert: c.goldAlert, timers: c.timers };
@@ -481,6 +557,7 @@ export class CoachState {
       heroInfo: hero ?? null,
       report: this.report,
       benchmark: this.benchmark(),
+      purchases: this.purchases,
       rank: this.rank(),
       draft: this.draft(),
       enemies: this.enemies,
@@ -508,6 +585,7 @@ export class CoachState {
     const all = [...s.items.inventory, ...s.items.backpack, ...s.items.stash, s.items.teleport, s.items.neutral];
     for (const i of all) if (i) items[i.name] = getItem(i.name)?.name ?? i.name;
     for (const i of this.advisor.status().advice?.next_items ?? []) items[i.item] = getItem(i.item)?.name ?? i.item;
+    for (const k of this.purchases.flatMap((p) => p.replaced)) items[k] = getItem(k)?.name ?? k;
     return { abilities, items };
   }
 }

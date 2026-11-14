@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalize } from "../src/gsi/normalize.js";
-import { parseBenchmarks, parseHeroStats, parseHeroTotals, parseMatchups } from "../src/data/opendota.js";
+import { parseBenchmarks, parseHeroStats, parseHeroTotals, parseMatchups, parsePlayerSummary } from "../src/data/opendota.js";
 import { compareStats, medianOf, percentileOf } from "../src/engine/benchmarks.js";
 import { BANDS, bandForMmr, bandForTier, gameResultDelta, rankView } from "../src/engine/rank.js";
 import { matchupAdvantage, positionFit, suggestPicks } from "../src/engine/draft.js";
@@ -107,12 +107,39 @@ describe("rank", () => {
     expect(rankView({ mmr: 3800, rankTier: null, perGame: 25 }).nextMedal).toBeNull();
   });
 
-  it("falls back to the OpenDota medal when no MMR is typed in", () => {
-    const v = rankView({ mmr: null, rankTier: 43, perGame: 25 });
-    expect(v.source).toBe("medal");
-    expect(v.label).toBe("Archon 3");
-    expect(v.nextStar?.label).toBe("Archon 4");
+  it("collects MMR automatically: OpenDota estimate first, then the medal's midpoint", () => {
+    const est = rankView({ mmr: null, computedMmr: 3500, rankTier: 53, perGame: 25, offset: 25 });
+    expect(est).toMatchObject({ source: "estimate", approximate: true, mmr: 3525, label: "Legend 3" });
+    // Archon 3 = 2618..2772, midpoint 2695
+    const med = rankView({ mmr: null, computedMmr: null, rankTier: 43, perGame: 25 });
+    expect(med).toMatchObject({ source: "medal", approximate: true, mmr: 2695, label: "Archon 3" });
+    expect(med.nextStar).toMatchObject({ label: "Archon 4", remaining: 77 });
+    // A typed-in MMR always wins and isn't approximate
+    expect(rankView({ mmr: 3000, computedMmr: 3500, rankTier: 53, perGame: 25 })).toMatchObject({ source: "mmr", approximate: false, mmr: 3000 });
     expect(rankView({ mmr: null, rankTier: null, perGame: 25 }).source).toBe("none");
+  });
+
+  it("parses OpenDota's computed_mmr", () => {
+    const s = parsePlayerSummary(1, { profile: { personaname: "x" }, rank_tier: 53, computed_mmr: 3497.6 }, []);
+    expect(s.computedMmr).toBe(3498);
+    expect(parsePlayerSummary(1, { profile: {}, computed_mmr: null }, []).computedMmr).toBeNull();
+  });
+
+  it("adds games finished after the estimate was fetched", () => {
+    const settings = new SettingsStore(null);
+    const fetchedAt = Date.now() - 60_000;
+    const summary = { accountId: 100000006, name: "me", avatar: null, rankTier: 53, leaderboardRank: null, rank: "Legend 3", computedMmr: 3500, recent: null, topHeroes: [], isPrivate: false, fetchedAt };
+    const state = new CoachState(new Advisor({ runtime: rt(false), call: null }), async () => null, undefined as never, settings, async () => summary, async () => null, async () => null);
+    const lost = rawGame({ matchId: "888" });
+    lost.player!.steamid = "76561198060265734";
+    lost.map!.win_team = "dire";
+    state.ingest(lost);
+    return new Promise<void>((done) => setTimeout(() => {
+      state.ingest(lost);
+      expect(settings.get().rank.mmr).toBeNull(); // nothing typed in, nothing written
+      expect(state.rank()).toMatchObject({ source: "estimate", mmr: 3475 });
+      done();
+    }, 0));
   });
 
   it("scores a finished game", () => {

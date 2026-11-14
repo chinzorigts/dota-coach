@@ -2,6 +2,7 @@ import type { GameSnapshot } from "../gsi/normalize.js";
 import { getHero, getItem, remainingCost } from "../data/constants.js";
 import type { ItemPopularity } from "../data/opendota.js";
 import { matchCounters } from "./counters.js";
+import { isBootsUpgrade } from "./purchases.js";
 import type { ItemRec, Role } from "./types.js";
 
 /** Consumables and small parts that add noise to build recommendations */
@@ -49,6 +50,8 @@ interface ItemContext {
   popularity: ItemPopularity | null;
   enemies: string[];
   aiItems: { item: string; reason: string }[];
+  /** Recommendations made redundant by what you bought instead (see purchases.ts) */
+  skipped?: string[];
 }
 
 export function recommendItems(s: GameSnapshot, ctx: ItemContext): ItemRec[] {
@@ -57,9 +60,13 @@ export function recommendItems(s: GameSnapshot, ctx: ItemContext): ItemRec[] {
   const phase = phaseOf(s.clockTime);
   const recs = new Map<string, ItemRec>();
 
+  const skipped = new Set(ctx.skipped ?? []);
+  // One pair of upgraded boots is enough: once you have any, the others stop being suggested
+  const hasBoots = owned.some(isBootsUpgrade);
   const add = (key: string, reason: string, source: ItemRec["source"], priority: number) => {
     const it = getItem(key);
     if (!it) return;
+    if (source !== "rule" && (skipped.has(key) || (hasBoots && isBootsUpgrade(key)))) return;
     const existing = recs.get(key);
     if (existing) {
       // When several sources agree, bump priority and join the reasons

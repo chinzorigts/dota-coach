@@ -83,6 +83,11 @@ export interface PlayerSummary {
   rankTier: number | null;
   leaderboardRank: number | null;
   rank: string | null;
+  /**
+   * OpenDota's MMR estimate from the ranks of recent public matches (`computed_mmr`). Valve's real MMR is only
+   * shown on your own in-game profile; null when OpenDota has too little to go on.
+   */
+  computedMmr?: number | null;
   /** Last RECENT_GAMES public matches; null when OpenDota couldn't deliver them this time */
   recent: { games: number; wins: number; losses: number; winRate: number | null } | null;
   topHeroes: { heroId: number; games: number; wins: number }[];
@@ -112,7 +117,12 @@ interface RawRecentMatch { hero_id?: number | string; player_slot?: number; radi
  * `recentRaw` undefined = that request failed (stats unknown); [] = no public matches. Exported for tests.
  */
 export function parsePlayerSummary(accountId: number, profileRaw: unknown, recentRaw: unknown, now = Date.now()): PlayerSummary {
-  const p = (profileRaw ?? {}) as { profile?: { personaname?: string; avatarmedium?: string } | null; rank_tier?: number | null; leaderboard_rank?: number | null };
+  const p = (profileRaw ?? {}) as {
+    profile?: { personaname?: string; avatarmedium?: string } | null;
+    rank_tier?: number | null;
+    leaderboard_rank?: number | null;
+    computed_mmr?: number | null;
+  };
   const matches = Array.isArray(recentRaw) ? (recentRaw as RawRecentMatch[]).slice(0, RECENT_GAMES) : null;
   let recent: PlayerSummary["recent"] = null;
   let topHeroes: PlayerSummary["topHeroes"] = [];
@@ -144,6 +154,7 @@ export function parsePlayerSummary(accountId: number, profileRaw: unknown, recen
     rankTier,
     leaderboardRank,
     rank: rankLabel(rankTier, leaderboardRank),
+    computedMmr: typeof p.computed_mmr === "number" && p.computed_mmr > 0 ? Math.round(p.computed_mmr) : null,
     recent,
     topHeroes,
     // No profile at all, or a profile with zero recent public matches ("Expose Public Match Data" off)
@@ -172,11 +183,11 @@ async function getJson(pathname: string, timeoutMs = 8000): Promise<unknown> {
   });
 }
 
-async function loadPlayer(accountId: number): Promise<PlayerSummary | null> {
+async function loadPlayer(accountId: number, fresh = false): Promise<PlayerSummary | null> {
   const file = path.join(config.cacheDir, "players", `${accountId}.json`);
   try {
     const cached = JSON.parse(await fs.readFile(file, "utf8")) as PlayerSummary;
-    if (Date.now() - cached.fetchedAt < PLAYER_TTL_MS) return cached;
+    if (!fresh && Date.now() - cached.fetchedAt < PLAYER_TTL_MS) return cached;
   } catch {
     /* no cache */
   }
@@ -206,10 +217,11 @@ async function loadPlayer(accountId: number): Promise<PlayerSummary | null> {
 
 const playerMemo = new Map<number, Promise<PlayerSummary | null>>();
 
-export function getPlayerSummary(accountId: number): Promise<PlayerSummary | null> {
-  let p = playerMemo.get(accountId);
+/** `fresh` skips both caches, e.g. our own profile right after a game when the medal may have changed */
+export function getPlayerSummary(accountId: number, fresh = false): Promise<PlayerSummary | null> {
+  let p = fresh ? undefined : playerMemo.get(accountId);
   if (!p) {
-    p = loadPlayer(accountId);
+    p = loadPlayer(accountId, fresh);
     playerMemo.set(accountId, p);
     p.then((v) => {
       // Failures retry next time; successes expire with the disk cache

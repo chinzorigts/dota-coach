@@ -45,6 +45,7 @@ Rules:
 - rule_engine in the input is a stats- and rules-based recommendation. Follow it when you agree; when the enemy lineup or the situation calls for something better, change it and say why.
 - If the enemy list is empty, do not assume an enemy lineup; advise from the player's hero and situation.
 - If the player asked a question, answer it first in summary.
+- If off_plan_purchase is present, the player just bought something other than the suggestion. Respect that choice: build around the item they bought, drop what it replaced, and say in summary how the plan changes.
 - Do not state patch-specific numbers (exact cooldowns, damage) you are unsure of.`;
 
 const mmss = (sec: number) => {
@@ -58,6 +59,7 @@ export function buildUserPayload(
   report: CoachReport,
   enemies: string[],
   question?: string,
+  bought?: { item: string; name: string; replaced: string[] }[],
 ) {
   const hero = s.hero ? getHero(s.hero.name) : undefined;
   const ownedNames = [...s.items.inventory, ...s.items.backpack, ...s.items.stash].map((i) => i.name);
@@ -99,5 +101,8 @@ export function buildUserPayload(
       unspent_skill_points: report.skills.unspent,
     },
     question: question?.trim() || undefined,
+    off_plan_purchase: bought?.length
+      ? bought.map((b) => ({ bought: b.item, name: b.name, instead_of: b.replaced }))
+      : undefined,
   };
 }

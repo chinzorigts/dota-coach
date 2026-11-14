@@ -29,7 +29,7 @@ export interface Settings {
     model: string;
     effort: Effort;
     autoIntervalSec: number;
-    triggers: { hero: boolean; death: boolean; periodic: boolean; enemies: boolean };
+    triggers: { hero: boolean; death: boolean; periodic: boolean; enemies: boolean; purchase: boolean };
   };
   coach: {
     defaultRole: "auto" | "core" | "support";
@@ -63,7 +63,7 @@ export function defaultSettings(): Settings {
       model,
       effort,
       autoIntervalSec: clamp(config.aiMinIntervalSec, 30, 600),
-      triggers: { hero: true, death: true, periodic: true, enemies: true },
+      triggers: { hero: true, death: true, periodic: true, enemies: true, purchase: true },
     },
     coach: {
       defaultRole: "auto",
@@ -113,7 +113,7 @@ export function mergeSettings(base: Settings, patch: unknown): Settings {
       model: oneOf(ai.model, MODELS.map((m) => m.id), base.ai.model as (typeof MODELS)[number]["id"]),
       effort: oneOf(ai.effort, EFFORTS, base.ai.effort),
       autoIntervalSec: num(ai.autoIntervalSec, base.ai.autoIntervalSec, 30, 600, 5),
-      triggers: flags(ai.triggers, ["hero", "death", "periodic", "enemies"] as const, base.ai.triggers),
+      triggers: flags(ai.triggers, ["hero", "death", "periodic", "enemies", "purchase"] as const, base.ai.triggers),
     },
     coach: {
       defaultRole: oneOf(coach.defaultRole, ["auto", "core", "support"] as const, base.coach.defaultRole),

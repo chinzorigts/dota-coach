@@ -22,7 +22,7 @@ describe("mergeSettings", () => {
     expect(s.ai.model).toBe(defaultSettings().ai.model); // unknown model rejected
     expect(s.ai.effort).toBe(defaultSettings().ai.effort); // max is not offered
     expect(s.ai.autoIntervalSec).toBe(30);
-    expect(s.ai.triggers).toEqual({ hero: true, death: false, periodic: true, enemies: true });
+    expect(s.ai.triggers).toEqual({ hero: true, death: false, periodic: true, enemies: true, purchase: true });
     expect(s.coach.lowHpPct).toBe(60);
     expect(s.coach.goldAlert).toBe(2000);
     expect(s.coach.timers.stack).toBe(false);

@@ -27,6 +27,7 @@ const TRIGGER_LABELS: [keyof SettingsT["ai"]["triggers"], string][] = [
   ["death", "After I die"],
   ["periodic", "Every 5 minutes"],
   ["enemies", "When the enemy lineup changes"],
+  ["purchase", "When I buy something other than the suggestion"],
 ];
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
@@ -283,12 +284,15 @@ export function Settings({ onClose }: { onClose: () => void }) {
       <section className="panel set-section">
         <h2>Rank and MMR</h2>
         <div className="set-range">
-          <label htmlFor="mmr">My MMR</label>
+          <label htmlFor="mmr">Exact MMR (optional)</label>
           <input id="mmr" type="number" inputMode="numeric" min={0} max={15000} step={1} disabled={ro}
-            value={s.rank.mmr ?? ""} placeholder="From your Dota profile"
+            value={s.rank.mmr ?? ""} placeholder="Automatic"
             onChange={(e) => change({ rank: { mmr: e.target.value === "" ? null : Number(e.target.value) } })} />
         </div>
-        <p className="muted small">Dota doesn't send MMR to apps. Type it once from your profile; without it the medal comes from OpenDota.</p>
+        <p className="muted small">
+          Leave empty to collect it automatically (OpenDota's estimate from your ranked matches, refreshed after games).
+          Dota only shows the exact number on your own profile, so type it here if you want exact figures.
+        </p>
         <Toggle label="Update MMR after each game" checked={s.rank.autoAdjust} disabled={ro}
           onChange={(v) => change({ rank: { autoAdjust: v } })}
           hint="Wins add, losses subtract. The game can't tell ranked from unranked, so use Undo on the rank card after a normal or turbo game." />

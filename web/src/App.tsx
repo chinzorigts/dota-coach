@@ -65,7 +65,8 @@ export default function App() {
               {state.benchmark && <StatsCompare b={state.benchmark} />}
             </section>
             <section className="col col-recs">
-              <ItemList items={r.items} gold={s.player?.gold ?? 0} source={state.popularitySource} />
+              <ItemList items={r.items} gold={s.player?.gold ?? 0} source={state.popularitySource}
+                purchases={state.purchases} names={state.names.items} />
               <SkillPanel snapshot={s} report={r} names={state.names} />
             </section>
             <section className="col col-side">

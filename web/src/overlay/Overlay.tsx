@@ -87,6 +87,14 @@ export function Overlay() {
             );
           })()}
 
+          {show("item") && (() => {
+            // For a minute of game time after an off-plan buy, say that the list adapted to it
+            const p = [...(state.purchases ?? [])].reverse().find((x) => !x.followed);
+            if (!p || s.clockTime - p.clock > 60) return null;
+            const was = p.replaced.map((k) => state.names.items[k] ?? k).join(", ");
+            return <p className="ov-offplan">Bought {p.name}{was ? ` over ${was}` : ""}: plan updated</p>;
+          })()}
+
           {show("skill") && r.skills.next && (
             <div className="ov-row skill">
               {r.skills.next.kind === "ability" ? (

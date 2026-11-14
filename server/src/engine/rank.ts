@@ -55,8 +55,14 @@ export function bandForTier(tier: number | null): Band | null {
 }
 
 export interface RankView {
-  /** Where the numbers come from: your typed-in MMR, or only the medal OpenDota reports */
-  source: "mmr" | "medal" | "none";
+  /**
+   * Where the MMR comes from. Valve only shows the exact number on your own in-game profile, so by default it's
+   * collected automatically: OpenDota's estimate from your recent ranked matches ("estimate"), else the middle of
+   * your medal's range ("medal"). A number typed in Settings wins ("mmr").
+   */
+  source: "mmr" | "estimate" | "medal" | "none";
+  /** True whenever the number isn't the one you typed: the UI prefixes it with "≈" */
+  approximate: boolean;
   mmr: number | null;
   label: string | null;
   medal: Medal | null;
@@ -76,12 +82,17 @@ export interface RankView {
 const winsFor = (remaining: number, perGame: number) => Math.max(1, Math.ceil(remaining / perGame));
 
 export function rankView(opts: {
+  /** Typed in Settings */
   mmr: number | null;
+  /** OpenDota computed_mmr */
+  computedMmr?: number | null;
   rankTier: number | null;
   perGame: number;
+  /** Wins/losses since the estimate was fetched, so it moves right after a game */
+  offset?: number;
   lastChange?: RankView["lastChange"];
 }): RankView {
-  const { mmr, rankTier, perGame } = opts;
+  const { rankTier, perGame } = opts;
   const od = bandForTier(rankTier);
   const base = {
     openDotaLabel: od ? bandLabel(od) : null,
@@ -89,6 +100,21 @@ export function rankView(opts: {
     lastChange: opts.lastChange ?? null,
     estimated: true as const,
   };
+
+  // Typed-in MMR first, then OpenDota's estimate, then the middle of the medal band (Immortal: its floor)
+  const offset = opts.offset ?? 0;
+  let source: RankView["source"] = "none";
+  let mmr: number | null = null;
+  if (opts.mmr !== null) {
+    source = "mmr";
+    mmr = opts.mmr;
+  } else if (opts.computedMmr) {
+    source = "estimate";
+    mmr = Math.max(0, opts.computedMmr + offset);
+  } else if (od) {
+    source = "medal";
+    mmr = Math.max(0, (od.to === null ? od.from : Math.round((od.from + od.to) / 2)) + offset);
+  }
 
   if (mmr !== null) {
     const band = bandForMmr(mmr);
@@ -98,7 +124,8 @@ export function rankView(opts: {
     const target = (b: Band | null) => (b ? { label: bandLabel(b), mmr: b.from, remaining: b.from - mmr, wins: winsFor(b.from - mmr, perGame) } : null);
     return {
       ...base,
-      source: "mmr",
+      source,
+      approximate: source !== "mmr",
       mmr,
       label: bandLabel(band),
       medal: band.medal,
@@ -110,25 +137,7 @@ export function rankView(opts: {
     };
   }
 
-  if (od) {
-    // Medal only: the gap is "up to one star" without knowing where inside the star you are
-    const i = BANDS.indexOf(od);
-    const next = BANDS[i + 1] ?? null;
-    const width = od.to === null ? 0 : od.to - od.from;
-    return {
-      ...base,
-      source: "medal",
-      mmr: null,
-      label: bandLabel(od),
-      medal: od.medal,
-      stars: od.stars || null,
-      nextStar: next ? { label: bandLabel(next), mmr: next.from, remaining: width, wins: winsFor(width, perGame) } : null,
-      nextMedal: null,
-      progress: null,
-    };
-  }
-
-  return { ...base, source: "none", mmr: null, label: null, medal: null, stars: null, nextStar: null, nextMedal: null, progress: null };
+  return { ...base, source: "none", approximate: true, mmr: null, label: null, medal: null, stars: null, nextStar: null, nextMedal: null, progress: null };
 }
 
 /**
