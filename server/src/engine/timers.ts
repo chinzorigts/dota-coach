@@ -24,7 +24,8 @@ export function nextOccurrence(clock: number, first: number, every: number): num
   return first + Math.ceil((clock - first + 0.001) / every) * every;
 }
 
-export function buildTimers(s: GameSnapshot): TimerInfo[] {
+/** `enabled` maps timer id → shown; missing ids count as shown */
+export function buildTimers(s: GameSnapshot, enabled: Record<string, boolean> = {}): TimerInfo[] {
   const clock = s.clockTime;
   const out: TimerInfo[] = PERIODIC.filter((p) => p.until === undefined || clock < p.until).map((p) => ({
     id: p.id,
@@ -49,5 +50,5 @@ export function buildTimers(s: GameSnapshot): TimerInfo[] {
     });
   }
 
-  return out.sort((a, b) => a.inSeconds - b.inSeconds);
+  return out.filter((t) => enabled[t.id] !== false).sort((a, b) => a.inSeconds - b.inSeconds);
 }

@@ -38,27 +38,54 @@ interface TriggerMemory {
 
 const BUCKET_SEC = 5 * 60;
 
-/** Pure function deciding whether to auto-call (includes throttling) */
+export interface Triggers {
+  hero: boolean;
+  death: boolean;
+  periodic: boolean;
+  enemies: boolean;
+}
+const ALL_TRIGGERS: Triggers = { hero: true, death: true, periodic: true, enemies: true };
+
+/** Live AI settings, read on every decision so changes in the settings screen apply immediately */
+export interface AiRuntime {
+  enabled: boolean;
+  model: string;
+  minIntervalSec: number;
+  triggers: Triggers;
+}
+
+/** Pure function deciding whether to auto-call (includes throttling). Disabled triggers never fire. */
 export function decideTrigger(
   mem: TriggerMemory,
   s: GameSnapshot,
   now: number,
   minIntervalSec: number,
+  triggers: Triggers = ALL_TRIGGERS,
 ): TriggerReason | null {
   if (!s.hero || !s.player) return null;
   const key = `${s.matchId ?? "local"}:${s.hero.name}`;
   const sinceLast = (now - mem.lastCallAt) / 1000;
 
-  if (mem.key !== key) return "hero";
-  if (s.player.deaths > mem.deaths && sinceLast >= 30) return "death";
+  if (mem.key !== key) return triggers.hero ? "hero" : null;
+  if (triggers.death && s.player.deaths > mem.deaths && sinceLast >= 30) return "death";
   const bucket = Math.floor(Math.max(0, s.clockTime) / BUCKET_SEC);
-  if (bucket > mem.minuteBucket && sinceLast >= minIntervalSec) return "minute";
+  if (triggers.periodic && bucket > mem.minuteBucket && sinceLast >= minIntervalSec) return "minute";
   return null;
 }
 
-export function makeClaudeCaller(model: string, effort: "low" | "medium" | "high" | "xhigh" | "max"): AdviceCaller {
-  const client = new Anthropic();
+type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
+
+/** Client per API key, so saving a new key in the settings screen takes effect on the next call */
+function clientFor(apiKey: string | null) {
+  return apiKey ? new Anthropic({ apiKey }) : new Anthropic();
+}
+
+export function makeClaudeCaller(cfg: () => { model: string; effort: EffortLevel; apiKey: string | null }): AdviceCaller {
+  let cached: { key: string | null; client: Anthropic } | null = null;
   return async (payload) => {
+    const { model, effort, apiKey } = cfg();
+    if (!cached || cached.key !== apiKey) cached = { key: apiKey, client: clientFor(apiKey) };
+    const client = cached.client;
     const response = await client.beta.messages.create({
       model,
       max_tokens: 8000,
@@ -80,29 +107,42 @@ export function makeClaudeCaller(model: string, effort: "low" | "medium" | "high
   };
 }
 
+/** Cheap credential check for the settings screen: looks up the model, generates nothing */
+export async function testConnection(model: string, apiKey: string | null): Promise<{ ok: true; model: string } | { ok: false; error: string }> {
+  try {
+    const m = await clientFor(apiKey).models.retrieve(model);
+    return { ok: true, model: m.display_name ?? model };
+  } catch (err) {
+    return { ok: false, error: describeError(err) };
+  }
+}
+
 export class Advisor {
   private mem: TriggerMemory = { key: null, deaths: 0, minuteBucket: -1, lastCallAt: 0 };
-  private state: AdvisorStatus;
+  private state: Omit<AdvisorStatus, "enabled" | "model">;
   private listeners = new Set<() => void>();
 
   constructor(
     private opts: {
-      enabled: boolean;
-      model: string;
-      minIntervalSec: number;
+      runtime: () => AiRuntime;
       call: AdviceCaller | null;
       now?: () => number;
     },
   ) {
-    this.state = { enabled: opts.enabled && !!opts.call, model: opts.model, pending: null, error: null, advice: null };
+    this.state = { pending: null, error: null, advice: null };
   }
 
   private now() {
     return this.opts.now?.() ?? Date.now();
   }
 
+  private get enabled() {
+    return this.opts.runtime().enabled && Boolean(this.opts.call);
+  }
+
   status(): AdvisorStatus {
-    return this.state;
+    const rt = this.opts.runtime();
+    return { ...this.state, enabled: this.enabled, model: rt.model };
   }
 
   onChange(cb: () => void) {
@@ -122,23 +162,31 @@ export class Advisor {
 
   /** Called on every GSI update. Requests advice in the background when needed */
   onSnapshot(s: GameSnapshot, report: CoachReport, enemies: string[]): Promise<void> | null {
-    if (!this.state.enabled || this.state.pending) return null;
-    const reason = decideTrigger(this.mem, s, this.now(), this.opts.minIntervalSec);
-    // Track deaths even without a trigger so the next death is detected
-    if (s.player && !reason) this.mem.deaths = s.player.deaths;
+    if (!this.enabled || this.state.pending) return null;
+    const rt = this.opts.runtime();
+    const reason = decideTrigger(this.mem, s, this.now(), rt.minIntervalSec, rt.triggers);
+    if (!reason && s.hero && s.player) {
+      // Track deaths even without a trigger so the next death is detected
+      this.mem.deaths = s.player.deaths;
+      // Hero trigger off: still remember the match, or every other trigger would wait on it forever
+      const key = `${s.matchId ?? "local"}:${s.hero.name}`;
+      if (this.mem.key !== key) {
+        this.mem = { key, deaths: s.player.deaths, minuteBucket: Math.floor(Math.max(0, s.clockTime) / BUCKET_SEC), lastCallAt: 0 };
+      }
+    }
     if (!reason) return null;
     return this.request(reason, s, report, enemies);
   }
 
   /** Re-ask when the enemy lineup changes, regardless of throttle (10s minimum) */
   onEnemiesChanged(s: GameSnapshot | null, report: CoachReport | null, enemies: string[]) {
-    if (!this.state.enabled || this.state.pending || !s?.hero || !report) return null;
+    if (!this.enabled || !this.opts.runtime().triggers.enemies || this.state.pending || !s?.hero || !report) return null;
     if ((this.now() - this.mem.lastCallAt) / 1000 < 10) return null;
     return this.request("enemies", s, report, enemies);
   }
 
   ask(s: GameSnapshot, report: CoachReport, enemies: string[], question?: string) {
-    if (!this.state.enabled) return Promise.reject(new Error("AI is off (check ANTHROPIC_API_KEY)"));
+    if (!this.enabled) return Promise.reject(new Error("AI is off. Turn it on and add an API key in Settings"));
     if (this.state.pending) return Promise.reject(new Error("Already waiting for advice"));
     return this.request("manual", s, report, enemies, question);
   }

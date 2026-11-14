@@ -3,7 +3,7 @@ import { normalize } from "../src/gsi/normalize.js";
 import { buildReport } from "../src/engine/index.js";
 import { Advisor, decideTrigger, type AdviceCaller } from "../src/ai/advisor.js";
 import { buildUserPayload } from "../src/ai/prompt.js";
-import { rawGame } from "./fixtures.js";
+import { rawGame, rt } from "./fixtures.js";
 
 const report = (s: ReturnType<typeof normalize>) =>
   buildReport(s, { rolePref: "auto", popularity: null, enemies: [], ai: null });
@@ -38,7 +38,7 @@ describe("decideTrigger", () => {
 describe("Advisor", () => {
   it("filters hallucinated item keys and records the reason", async () => {
     const call: AdviceCaller = vi.fn(async () => fakeAdvice);
-    const a = new Advisor({ enabled: true, model: "m", minIntervalSec: 90, call });
+    const a = new Advisor({ runtime: rt(true), call });
     const s = normalize(rawGame());
     await a.onSnapshot(s, report(s), []);
     const adv = a.status().advice!;
@@ -50,7 +50,7 @@ describe("Advisor", () => {
   });
 
   it("surfaces errors without throwing", async () => {
-    const a = new Advisor({ enabled: true, model: "m", minIntervalSec: 90, call: async () => { throw new Error("boom"); } });
+    const a = new Advisor({ runtime: rt(true), call: async () => { throw new Error("boom"); } });
     const s = normalize(rawGame());
     await a.onSnapshot(s, report(s), []);
     expect(a.status().error).toBe("boom");
@@ -58,14 +58,14 @@ describe("Advisor", () => {
   });
 
   it("rejects manual ask when disabled", async () => {
-    const a = new Advisor({ enabled: false, model: "m", minIntervalSec: 90, call: null });
+    const a = new Advisor({ runtime: rt(false), call: null });
     const s = normalize(rawGame());
     await expect(a.ask(s, report(s), [])).rejects.toThrow();
   });
 
   it("passes the question through to the payload", async () => {
     let seen: any;
-    const a = new Advisor({ enabled: true, model: "m", minIntervalSec: 90, call: async (p) => { seen = p; return fakeAdvice; } });
+    const a = new Advisor({ runtime: rt(true), call: async (p) => { seen = p; return fakeAdvice; } });
     const s = normalize(rawGame());
     await a.ask(s, report(s), ["npc_dota_hero_lion"], "When should I buy BKB?");
     expect(seen.question).toBe("When should I buy BKB?");

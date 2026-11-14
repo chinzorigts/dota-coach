@@ -9,9 +9,23 @@ import { AiPanel } from "./components/AiPanel";
 import { Timers } from "./components/Timers";
 import { EnemyPicker } from "./components/EnemyPicker";
 import { Waiting } from "./components/Waiting";
+import { Settings } from "./components/Settings";
+
+/** #settings opens the settings screen; plain hash routing keeps it linkable from the server log */
+function useHashRoute() {
+  const [hash, setHash] = useState(location.hash);
+  useEffect(() => {
+    const on = () => setHash(location.hash);
+    addEventListener("hashchange", on);
+    return () => removeEventListener("hashchange", on);
+  }, []);
+  return hash;
+}
 
 export default function App() {
   const { state, connected, serverNow } = useCoach();
+  const route = useHashRoute();
+  const inSettings = route === "#settings";
   // Re-render every second so 'last GSI received' ages on its own
   const [, tick] = useState(0);
   useEffect(() => {
@@ -25,8 +39,11 @@ export default function App() {
 
   return (
     <div className="app">
-      <TopBar connected={connected} gsiAge={gsiAge} snapshot={s ?? null} report={r ?? null} />
-      {!state || !s?.hero || !r ? (
+      <TopBar connected={connected} gsiAge={gsiAge} snapshot={s ?? null} report={r ?? null}
+        inSettings={inSettings} noKey={state?.apiKey.source === "none"} />
+      {inSettings ? (
+        <Settings onClose={() => (location.hash = "")} />
+      ) : !state || !s?.hero || !r ? (
         <Waiting connected={connected} hasGsi={Boolean(state?.lastGsiAt)} gameState={s?.gameState} />
       ) : (
         <>

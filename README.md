@@ -22,10 +22,11 @@ Requires Node.js 20.12+.
 
 ```bash
 npm install
-cp .env.example .env        # add ANTHROPIC_API_KEY to enable AI advice (the rule engine works without it)
 npm run install-cfg         # puts the GSI config file in your Dota 2 folder
 npm run build && npm start  # dashboard at http://127.0.0.1:3001
 ```
+
+To turn on AI advice, open **Settings** (gear icon, or `http://127.0.0.1:3001/#settings`) and paste your Anthropic API key. Everything else works without it.
 
 Then in Steam open **Dota 2 > Properties > Launch Options**, add `-gamestateintegration`, and restart Dota 2. A bot match is the quickest check.
 
@@ -34,6 +35,21 @@ If `install-cfg` can't find your install, pass the path:
 ```bash
 npm run install-cfg -- "D:\SteamLibrary\steamapps\common\dota 2 beta"
 ```
+
+## Settings
+
+Open the gear icon in the dashboard (or `/#settings`). Changes save as you make them and apply immediately, no restart.
+
+| Section | What you can change |
+|---|---|
+| AI coach | API key (save, test, remove), on/off, model (Opus / Sonnet / Haiku), thinking depth, which moments trigger automatic analysis, minimum interval |
+| Coaching | Default role, low-HP warning threshold, gold reminder threshold, which timers to show |
+| Overlay | Which sections appear, background opacity, text size |
+| Enemy auto-detection | On/off |
+
+- Settings are stored in `.data/settings.json`, the API key in `.data/secrets.json` (file mode 600). Both are git-ignored. The key is never sent to the browser; the screen only shows its last four characters.
+- Values in `.env` (`COACH_MODEL`, `COACH_EFFORT`, `COACH_AI_MIN_INTERVAL`, `ANTHROPIC_API_KEY`, ...) seed the defaults, so an existing setup keeps working. A key saved in Settings overrides `ANTHROPIC_API_KEY`.
+- **Settings can only be changed on the PC running Dota Coach.** With `HOST=0.0.0.0` other devices can open the settings screen read-only, but can't change the key or anything that affects cost.
 
 ## In-game overlay
 
@@ -109,7 +125,7 @@ Anyone on that network can then see the dashboard and **send AI questions (which
 ## AI advice (Claude)
 
 - Runs when your hero is locked in, after a death (30s cooldown), every 5 minutes (at least `COACH_AI_MIN_INTERVAL` apart), when the enemy lineup changes, and when you ask
-- Default model `claude-opus-5-5` with `effort=low` (fast responses mid-game). Change with `COACH_MODEL` / `COACH_EFFORT` in `.env`. For lower cost: `COACH_MODEL=claude-haiku-5-5`
+- Default model `claude-opus-5-5` with fast thinking depth (quick responses mid-game). Change the model, depth and triggers in Settings; Haiku is the lowest-cost option
 - Server-side refusal fallback (`fallbacks: "default"`) is enabled
 - Output is constrained to a JSON schema, and item keys that don't exist are dropped
 
@@ -135,6 +151,7 @@ server/src
   engine/     items · skills · alerts · timers · counters → CoachReport
   ai/         Claude prompt · triggers/throttle · API call
   vision/     top-bar portrait matching (image helpers, matcher, streak/calibration detector, hero art cache)
+  settings.ts settings store (validation, .data/ persistence, API key handling)
   state.ts    match state (enemies, role, popular build, AI result)
   app.ts      HTTP (/gsi, /api/*) + WebSocket (/ws) + static files
   tools/      install-cfg · mock-gsi

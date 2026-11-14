@@ -40,8 +40,14 @@ export function Overlay() {
     }
   };
 
+  const ov = state?.settings.overlay;
+  const show = (k: string) => ov?.sections[k] !== false;
+  const style = ov
+    ? ({ "--ov-alpha": ov.opacity, zoom: ov.scale } as React.CSSProperties)
+    : undefined;
+
   return (
-    <div className={`ov ${locked ? "locked" : "unlocked"}`}>
+    <div className={`ov ${locked ? "locked" : "unlocked"}`} style={style}>
       {!locked && (
         <div className="ov-handle">
           <span>Drag to move, resize from the edges</span>
@@ -53,7 +59,7 @@ export function Overlay() {
         <p className="ov-idle">{!connected ? "Dota Coach: server offline" : "Dota Coach: waiting for a game"}</p>
       ) : (
         <>
-          {r.items[0] && (() => {
+          {show("item") && r.items[0] && (() => {
             const it = r.items[0];
             const g = s.player?.gold ?? 0;
             const pct = it.remaining === 0 ? 100 : Math.min(100, (g / it.remaining) * 100);
@@ -71,7 +77,7 @@ export function Overlay() {
             );
           })()}
 
-          {r.skills.next && (
+          {show("skill") && r.skills.next && (
             <div className="ov-row skill">
               {r.skills.next.kind === "ability" ? (
                 <Img src={abilityImg(r.skills.next.key)} label={state.names.abilities[r.skills.next.key] ?? r.skills.next.name} width={32} height={32} />
@@ -87,11 +93,11 @@ export function Overlay() {
             </div>
           )}
 
-          {r.alerts.filter((a) => a.level === "danger").slice(0, 2).map((a) => (
+          {show("alerts") && r.alerts.filter((a) => a.level === "danger").slice(0, 2).map((a) => (
             <p key={a.id} className="ov-alert">{a.text}</p>
           ))}
 
-          {state.enemies.length > 0 && (
+          {show("enemies") && state.enemies.length > 0 && (
             <div className="ov-enemies" aria-label="Enemy heroes">
               {state.enemies.map((e) => (
                 <Img key={e} src={heroIcon(e)} label={e.replace("npc_dota_hero_", "")} width={22} height={22} />
@@ -100,15 +106,17 @@ export function Overlay() {
             </div>
           )}
 
-          <div className="ov-timers">
-            {r.timers.slice(0, 2).map((t) => (
-              <span key={t.id} className={t.inSeconds <= 15 ? "soon" : ""}>
-                {t.label} <b>{clock(t.inSeconds)}</b>
-              </span>
-            ))}
-          </div>
+          {show("timers") && r.timers.length > 0 && (
+            <div className="ov-timers">
+              {r.timers.slice(0, 2).map((t) => (
+                <span key={t.id} className={t.inSeconds <= 15 ? "soon" : ""}>
+                  {t.label} <b>{clock(t.inSeconds)}</b>
+                </span>
+              ))}
+            </div>
+          )}
 
-          {state.ai.enabled && (state.ai.advice || state.ai.pending || state.ai.error) && (
+          {show("ai") && state.ai.enabled && (state.ai.advice || state.ai.pending || state.ai.error) && (
             <div className={`ov-ai ${state.ai.advice?.danger ?? ""}`}>
               {state.ai.pending ? (
                 <p className="ov-pending">AI is thinking…</p>

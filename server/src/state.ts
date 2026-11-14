@@ -8,6 +8,7 @@ import { EnemyDetector, type DetectionResult, type Side, type SlotResult } from 
 import type { RGBImage } from "./vision/image.js";
 import type { TemplateBank } from "./vision/matcher.js";
 import { getTemplateBank } from "./vision/templates.js";
+import { SettingsStore } from "./settings.js";
 
 /** Where the current enemy list came from. Manual always wins; auto sources never overwrite it. */
 export type EnemySource = "none" | "manual" | "gsi" | "vision";
@@ -39,7 +40,17 @@ export class CoachState {
     private advisor: Advisor,
     private loadPopularity: (heroId: number) => Promise<ItemPopularity | null> = getItemPopularity,
     private loadBank: () => Promise<{ bank: TemplateBank }> = getTemplateBank,
+    readonly settings: SettingsStore = new SettingsStore(null),
   ) {
+    this.rolePref = settings.get().coach.defaultRole;
+    let lastDefaultRole = this.rolePref;
+    settings.onChange(() => {
+      // A new default role applies right away; the footer buttons still override it for this session
+      const role = settings.get().coach.defaultRole;
+      if (role !== lastDefaultRole) this.rolePref = lastDefaultRole = role;
+      this.recompute();
+      this.emit();
+    });
     advisor.onChange(() => {
       this.recompute(); // AI picks feed the item/skill ranking, so recompute
       this.emit();
@@ -128,7 +139,7 @@ export class CoachState {
   visionWanted(): boolean {
     const s = this.snapshot;
     return Boolean(
-      s?.hero && s.team && s.inProgress &&
+      this.settings.get().detection.enabled && s?.hero && s.team && s.inProgress &&
         this.enemySource !== "manual" && this.enemySource !== "gsi" && this.enemies.length < 5,
     );
   }
@@ -168,6 +179,10 @@ export class CoachState {
       popularity: this.popularity,
       enemies: this.enemies,
       ai: advice ? { items: advice.next_items, skillPriority: advice.skill_priority } : null,
+      prefs: (() => {
+        const c = this.settings.get().coach;
+        return { lowHpPct: c.lowHpPct, goldAlert: c.goldAlert, timers: c.timers };
+      })(),
     });
   }
 
@@ -182,6 +197,9 @@ export class CoachState {
       enemies: this.enemies,
       enemySource: this.enemySource,
       detection: { ...this.detection, wanted: this.visionWanted() },
+      // Public settings only: the API key itself never leaves the server
+      settings: this.settings.get(),
+      apiKey: this.settings.keyStatus(),
       rolePref: this.rolePref,
       popularitySource: this.popularity ? "opendota" : "default",
       ai: this.advisor.status(),

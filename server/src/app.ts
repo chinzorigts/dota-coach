@@ -5,11 +5,21 @@ import { WebSocketServer, WebSocket } from "ws";
 import { config } from "./config.js";
 import { allHeroes } from "./data/constants.js";
 import type { CoachState } from "./state.js";
-import type { Advisor } from "./ai/advisor.js";
+import { testConnection, type Advisor } from "./ai/advisor.js";
+import { EFFORTS, MODELS, OVERLAY_SECTIONS, TIMER_IDS } from "./settings.js";
 import type { RawGsi } from "./gsi/types.js";
 import { makeImage, type RGBImage } from "./vision/image.js";
 
 const MAX_SLOT_PX = 128;
+
+/**
+ * Settings can change the API key and what gets billed, so only requests from this PC may edit them.
+ * With HOST=0.0.0.0 a phone on the same Wi-Fi can still read the dashboard and settings.
+ */
+function isLocal(req: http.IncomingMessage): boolean {
+  const a = req.socket.remoteAddress ?? "";
+  return a === "127.0.0.1" || a === "::1" || a === "::ffff:127.0.0.1";
+}
 
 /** Validates the overlay's capture payload: { w, h, radiant: base64 RGB[], dire: base64 RGB[] } */
 function parseFrames(body: any): { radiant: RGBImage[]; dire: RGBImage[] } | string {
@@ -81,7 +91,19 @@ function serveStatic(res: http.ServerResponse, urlPath: string) {
   fs.createReadStream(file).pipe(res);
 }
 
-export function createApp(state: CoachState, advisor: Advisor, gsiToken = config.gsiToken) {
+export function createApp(
+  state: CoachState,
+  advisor: Advisor,
+  gsiToken = config.gsiToken,
+  deps: { testAi: typeof testConnection } = { testAi: testConnection },
+) {
+  const settings = state.settings;
+  const settingsView = (req: http.IncomingMessage) => ({
+    settings: settings.get(),
+    apiKey: settings.keyStatus(),
+    canEdit: isLocal(req),
+    options: { models: MODELS, efforts: EFFORTS, timers: TIMER_IDS, overlaySections: OVERLAY_SECTIONS },
+  });
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
@@ -121,6 +143,39 @@ export function createApp(state: CoachState, advisor: Advisor, gsiToken = config
         if (typeof frames === "string") return json(res, 400, { error: frames });
         const status = await state.ingestVision(frames);
         return json(res, 200, { wanted: state.visionWanted(), enemies: state.enemies, ...status });
+      }
+
+      if (url.pathname.startsWith("/api/settings")) {
+        if (req.method === "GET" && url.pathname === "/api/settings") return json(res, 200, settingsView(req));
+        if (!isLocal(req)) return json(res, 403, { error: "Settings can only be changed on the PC running Dota Coach" });
+
+        if (req.method === "PATCH" && url.pathname === "/api/settings") {
+          settings.update(JSON.parse((await readBody(req, 20_000)) || "{}"));
+          return json(res, 200, settingsView(req));
+        }
+        if (req.method === "POST" && url.pathname === "/api/settings/reset") {
+          settings.reset();
+          return json(res, 200, settingsView(req));
+        }
+        if (url.pathname === "/api/settings/api-key") {
+          if (req.method === "DELETE") {
+            settings.setApiKey(null);
+            return json(res, 200, settingsView(req));
+          }
+          if (req.method === "PUT") {
+            const key = String(JSON.parse((await readBody(req, 2_000)) || "{}").key ?? "").trim();
+            if (key.length < 20 || key.length > 300 || /\s/.test(key)) {
+              return json(res, 400, { error: "That doesn't look like an API key" });
+            }
+            settings.setApiKey(key);
+            return json(res, 200, settingsView(req));
+          }
+        }
+        if (req.method === "POST" && url.pathname === "/api/settings/test-ai") {
+          if (!settings.hasCredentials()) return json(res, 200, { ok: false, error: "No API key set" });
+          return json(res, 200, await deps.testAi(settings.get().ai.model, settings.resolvedKey()));
+        }
+        return json(res, 404, { error: "not found" });
       }
 
       if (req.method === "POST" && url.pathname === "/api/role") {

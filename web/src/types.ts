@@ -65,9 +65,46 @@ export interface CoachState {
     error: string | null;
   };
   rolePref: "auto" | "core" | "support";
+  settings: Settings;
+  apiKey: ApiKeyStatus;
   popularitySource: "opendota" | "default";
   names: { abilities: Record<string, string>; items: Record<string, string> };
   ai: { enabled: boolean; model: string; pending: AiAdvice["reason"] | null; error: string | null; advice: AiAdvice | null };
+}
+
+export interface Settings {
+  ai: {
+    enabled: boolean;
+    model: string;
+    effort: "low" | "medium" | "high";
+    autoIntervalSec: number;
+    triggers: { hero: boolean; death: boolean; periodic: boolean; enemies: boolean };
+  };
+  coach: {
+    defaultRole: "auto" | "core" | "support";
+    lowHpPct: number;
+    goldAlert: number;
+    timers: Record<string, boolean>;
+  };
+  overlay: { sections: Record<string, boolean>; opacity: number; scale: number };
+  detection: { enabled: boolean };
+}
+
+export interface ApiKeyStatus {
+  source: "settings" | "env" | "none";
+  last4: string | null;
+}
+
+export interface SettingsView {
+  settings: Settings;
+  apiKey: ApiKeyStatus;
+  canEdit: boolean;
+  options: {
+    models: { id: string; label: string; note: string }[];
+    efforts: string[];
+    timers: string[];
+    overlaySections: string[];
+  };
 }
 
 export interface HeroListItem { name: string; localizedName: string; icon: string; img: string; roles: string[] }

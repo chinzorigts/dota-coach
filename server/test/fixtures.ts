@@ -26,3 +26,13 @@ export function rawGame(over: Partial<{
     items,
   };
 }
+
+/** Advisor runtime for tests: fixed settings, all triggers on unless overridden */
+export const rt =
+  (enabled: boolean, over: Partial<{ minIntervalSec: number; triggers: Partial<Record<"hero" | "death" | "periodic" | "enemies", boolean>> }> = {}) =>
+  () => ({
+    enabled,
+    model: "m",
+    minIntervalSec: over.minIntervalSec ?? 90,
+    triggers: { hero: true, death: true, periodic: true, enemies: true, ...over.triggers },
+  });

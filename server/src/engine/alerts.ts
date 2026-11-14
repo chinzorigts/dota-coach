@@ -1,15 +1,21 @@
 import type { GameSnapshot } from "../gsi/normalize.js";
 import type { Alert, ItemRec } from "./types.js";
 
-export function buildAlerts(s: GameSnapshot, unspent: number, items: ItemRec[]): Alert[] {
+export interface AlertPrefs {
+  lowHpPct: number;
+  goldAlert: number;
+}
+const DEFAULT_PREFS: AlertPrefs = { lowHpPct: 25, goldAlert: 2000 };
+
+export function buildAlerts(s: GameSnapshot, unspent: number, items: ItemRec[], prefs: AlertPrefs = DEFAULT_PREFS): Alert[] {
   const out: Alert[] = [];
   const h = s.hero;
   const p = s.player;
   if (!h || !p) return out;
 
-  if (h.alive && h.healthPct > 0 && h.healthPct <= 25) {
+  if (h.alive && h.healthPct > 0 && h.healthPct <= prefs.lowHpPct) {
     out.push({ id: "low-hp", level: "danger", text: `HP ${h.healthPct}%. Back off or heal` });
-  } else if (h.alive && h.healthPct <= 45) {
+  } else if (h.alive && h.healthPct <= prefs.lowHpPct + 20) {
     out.push({ id: "mid-hp", level: "warn", text: `HP ${h.healthPct}%. Avoid risky fights` });
   }
 
@@ -31,7 +37,7 @@ export function buildAlerts(s: GameSnapshot, unspent: number, items: ItemRec[]):
   }
 
   const affordable = items.filter((i) => i.affordable && i.key !== "tpscroll");
-  if (p.gold >= 2000 && affordable.length > 0 && s.clockTime > 0) {
+  if (p.gold >= prefs.goldAlert && affordable.length > 0 && s.clockTime > 0) {
     out.push({
       id: "gold",
       level: "info",

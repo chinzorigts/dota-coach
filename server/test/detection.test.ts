@@ -5,7 +5,7 @@ import { CoachState } from "../src/state.js";
 import { createApp } from "../src/app.js";
 import { TemplateBank } from "../src/vision/matcher.js";
 import { MIN_STREAK } from "../src/vision/detector.js";
-import { rawGame } from "./fixtures.js";
+import { rawGame, rt } from "./fixtures.js";
 import { captured, portrait } from "./vision-fixtures.js";
 
 // Real hero keys so getHero() accepts them; synthetic art stands in for the CDN portraits
@@ -20,7 +20,7 @@ const b64Frame = (list: string[], seed: number) =>
   list.map((h, i) => Buffer.from(captured(ART.get(h)!, seed * 10 + i).data).toString("base64"));
 
 function newState() {
-  const advisor = new Advisor({ enabled: false, model: "m", minIntervalSec: 90, call: null });
+  const advisor = new Advisor({ runtime: rt(false), call: null });
   return { state: new CoachState(advisor, async () => null, async () => ({ bank })), advisor };
 }
 

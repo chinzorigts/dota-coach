@@ -4,14 +4,14 @@ import WebSocket from "ws";
 import { Advisor } from "../src/ai/advisor.js";
 import { CoachState } from "../src/state.js";
 import { createApp } from "../src/app.js";
-import { rawGame } from "./fixtures.js";
+import { rawGame, rt } from "./fixtures.js";
 
 let base = "";
 let close: () => Promise<void>;
 let state: CoachState;
 
 beforeAll(async () => {
-  const advisor = new Advisor({ enabled: false, model: "m", minIntervalSec: 90, call: null });
+  const advisor = new Advisor({ runtime: rt(false), call: null });
   state = new CoachState(advisor, async () => null);
   const { server, wss } = createApp(state, advisor, "test-token");
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));

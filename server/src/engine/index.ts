@@ -1,7 +1,7 @@
 import type { GameSnapshot } from "../gsi/normalize.js";
 import { getItem } from "../data/constants.js";
 import type { ItemPopularity } from "../data/opendota.js";
-import { buildAlerts } from "./alerts.js";
+import { buildAlerts, type AlertPrefs } from "./alerts.js";
 import { inferRole, ownedItems, phaseOf, recommendItems } from "./items.js";
 import { recommendSkill } from "./skills.js";
 import { buildTimers } from "./timers.js";
@@ -12,6 +12,8 @@ export interface EngineContext {
   popularity: ItemPopularity | null;
   enemies: string[];
   ai: { items: { item: string; reason: string }[]; skillPriority: string[] } | null;
+  /** From the settings screen; defaults apply when absent */
+  prefs?: AlertPrefs & { timers: Record<string, boolean> };
 }
 
 export function buildReport(s: GameSnapshot, ctx: EngineContext): CoachReport {
@@ -41,8 +43,8 @@ export function buildReport(s: GameSnapshot, ctx: EngineContext): CoachReport {
     },
     items,
     skills,
-    alerts: buildAlerts(s, skills.unspent, items),
-    timers: buildTimers(s),
+    alerts: buildAlerts(s, skills.unspent, items, ctx.prefs),
+    timers: buildTimers(s, ctx.prefs?.timers),
   };
 }
 
