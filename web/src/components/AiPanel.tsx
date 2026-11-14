@@ -9,6 +9,7 @@ const REASON: Record<string, string> = {
   death: "After death",
   minute: "5-minute check",
   enemies: "Enemy lineup update",
+  purchase: "Re-planned after your buy",
   manual: "Your question",
 };
 const DANGER: Record<string, string> = { low: "Stable", medium: "Careful", high: "Danger" };

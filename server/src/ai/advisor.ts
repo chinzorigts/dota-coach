@@ -16,7 +16,14 @@ export interface AiAdvice {
   question?: string;
 }
 
-export type TriggerReason = "hero" | "death" | "minute" | "enemies" | "manual";
+export type TriggerReason = "hero" | "death" | "minute" | "enemies" | "purchase" | "manual";
+
+/** What you bought instead of the suggestion, passed to the model so it can rebuild the plan */
+export interface PurchaseNote {
+  item: string;
+  name: string;
+  replaced: string[];
+}
 
 export interface AdvisorStatus {
   enabled: boolean;
@@ -43,8 +50,12 @@ export interface Triggers {
   death: boolean;
   periodic: boolean;
   enemies: boolean;
+  /** Optional so older callers/tests keep working; off only when explicitly false */
+  purchase?: boolean;
 }
-const ALL_TRIGGERS: Triggers = { hero: true, death: true, periodic: true, enemies: true };
+const ALL_TRIGGERS: Triggers = { hero: true, death: true, periodic: true, enemies: true, purchase: true };
+/** Buying several things at the fountain shouldn't fire several requests */
+const PURCHASE_MIN_GAP_SEC = 20;
 
 /** Live AI settings, read on every decision so changes in the settings screen apply immediately */
 export interface AiRuntime {
@@ -185,6 +196,13 @@ export class Advisor {
     return this.request("enemies", s, report, enemies);
   }
 
+  /** Re-plan after you bought something other than what was suggested (20s minimum between calls) */
+  onPurchase(s: GameSnapshot, report: CoachReport, enemies: string[], bought: PurchaseNote[]) {
+    if (!this.enabled || this.opts.runtime().triggers.purchase === false || this.state.pending || !s.hero) return null;
+    if ((this.now() - this.mem.lastCallAt) / 1000 < PURCHASE_MIN_GAP_SEC) return null;
+    return this.request("purchase", s, report, enemies, undefined, bought);
+  }
+
   ask(s: GameSnapshot, report: CoachReport, enemies: string[], question?: string) {
     if (!this.enabled) return Promise.reject(new Error("AI is off. Turn it on and add an API key in Settings"));
     if (this.state.pending) return Promise.reject(new Error("Already waiting for advice"));
@@ -197,6 +215,7 @@ export class Advisor {
     report: CoachReport,
     enemies: string[],
     question?: string,
+    bought?: PurchaseNote[],
   ) {
     this.mem = {
       key: s.hero ? `${s.matchId ?? "local"}:${s.hero.name}` : this.mem.key,
@@ -207,7 +226,7 @@ export class Advisor {
     this.state = { ...this.state, pending: reason, error: null };
     this.emit();
     try {
-      const raw = await this.opts.call!(buildUserPayload(s, report, enemies, question));
+      const raw = await this.opts.call!(buildUserPayload(s, report, enemies, question, bought));
       this.state = {
         ...this.state,
         pending: null,

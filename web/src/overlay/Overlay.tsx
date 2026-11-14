@@ -5,6 +5,29 @@ import { Img } from "../components/Img";
 import { abilityImg, clock, gold as fmt, heroIcon } from "../format";
 import { bridge, type OverlayMode } from "./bridge";
 import { OpponentsPanel } from "./OpponentsPanel";
+import { StatsCompareCompact } from "../components/StatsCompare";
+import { RankLine } from "../components/RankCard";
+import { DraftCompact } from "../components/DraftPanel";
+
+/** What the game is doing before your hero is in, so "waiting" never looks like "can't see the game" */
+function idleText(connected: boolean, gameState: string | undefined, gsiAgeMs: number | null): string {
+  if (!connected) return "Dota Coach: server offline";
+  if (gsiAgeMs === null || gsiAgeMs > 75_000) return "Dota Coach: waiting for Dota 2";
+  switch (gameState) {
+    case "DOTA_GAMERULES_STATE_HERO_SELECTION":
+    case "DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP":
+      return "Hero selection";
+    case "DOTA_GAMERULES_STATE_STRATEGY_TIME":
+      return "Strategy time";
+    case "DOTA_GAMERULES_STATE_WAIT_FOR_PLAYERS_TO_LOAD":
+    case "DOTA_GAMERULES_STATE_INIT":
+      return "Loading the match…";
+    case "DOTA_GAMERULES_STATE_POST_GAME":
+      return "Game over";
+    default:
+      return "Connected · waiting for a match";
+  }
+}
 
 /**
  * Compact HUD drawn over the game. Everything here must be readable in a glance,
@@ -70,9 +93,11 @@ export function Overlay() {
 
       {!connected || !s?.hero || !r ? (
         <>
-          <p className="ov-idle">{!connected ? "Dota Coach: server offline" : "Dota Coach: waiting for a game"}</p>
+          <p className="ov-idle">{idleText(connected, state?.snapshot?.gameState, state?.lastGsiAt ? Date.now() - state.lastGsiAt : null)}</p>
           {/* The lobby is known from match accept, before heroes are picked */}
           {connected && state?.match && show("opponents") && <OpponentsPanel match={state.match} />}
+          {connected && state?.draft && show("draft") && <DraftCompact draft={state.draft} />}
+          {connected && state && show("rank") && <RankLine rank={state.rank} />}
         </>
       ) : (
         <>
@@ -92,6 +117,14 @@ export function Overlay() {
                 </div>
               </div>
             );
+          })()}
+
+          {show("item") && (() => {
+            // For a minute of game time after an off-plan buy, say that the list adapted to it
+            const p = [...(state.purchases ?? [])].reverse().find((x) => !x.followed);
+            if (!p || s.clockTime - p.clock > 60) return null;
+            const was = p.replaced.map((k) => state.names.items[k] ?? k).join(", ");
+            return <p className="ov-offplan">Bought {p.name}{was ? ` over ${was}` : ""}: plan updated</p>;
           })()}
 
           {show("skill") && r.skills.next && (
@@ -124,6 +157,8 @@ export function Overlay() {
           )}
 
           {show("opponents") && state.match && state.match.enemies.length > 0 && <OpponentsPanel match={state.match} />}
+
+          {show("benchmark") && state.benchmark && <StatsCompareCompact b={state.benchmark} />}
 
           {show("timers") && r.timers.length > 0 && (
             <div className="ov-timers">

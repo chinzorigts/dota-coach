@@ -10,6 +10,9 @@ import { Timers } from "./components/Timers";
 import { EnemyPicker } from "./components/EnemyPicker";
 import { Waiting } from "./components/Waiting";
 import { Settings } from "./components/Settings";
+import { StatsCompare } from "./components/StatsCompare";
+import { RankCard } from "./components/RankCard";
+import { DraftPanel } from "./components/DraftPanel";
 
 /** #settings opens the settings screen; plain hash routing keeps it linkable from the server log */
 function useHashRoute() {
@@ -44,21 +47,33 @@ export default function App() {
       {inSettings ? (
         <Settings onClose={() => (location.hash = "")} />
       ) : !state || !s?.hero || !r ? (
-        <Waiting connected={connected} hasGsi={Boolean(state?.lastGsiAt)} gameState={s?.gameState} />
+        <>
+          {/* Dota sends at least every 30s while running; older data means it isn't running now */}
+          <Waiting connected={connected} hasGsi={gsiAge < 75} gameState={s?.gameState} />
+          {state && (
+            <main className="grid pregame">
+              {state.draft && <section className="col"><DraftPanel draft={state.draft} /></section>}
+              <section className="col"><RankCard rank={state.rank} /></section>
+            </main>
+          )}
+        </>
       ) : (
         <>
           <NextStrip report={r} gold={s.player?.gold ?? 0} names={state.names} />
           <main className="grid">
             <section className="col col-hero">
               <HeroPanel state={state} />
+              {state.benchmark && <StatsCompare b={state.benchmark} />}
             </section>
             <section className="col col-recs">
-              <ItemList items={r.items} gold={s.player?.gold ?? 0} source={state.popularitySource} />
+              <ItemList items={r.items} gold={s.player?.gold ?? 0} source={state.popularitySource}
+                purchases={state.purchases} names={state.names.items} />
               <SkillPanel snapshot={s} report={r} names={state.names} />
             </section>
             <section className="col col-side">
               <AiPanel ai={state.ai} names={state.names} />
               <Timers timers={r.timers} alerts={r.alerts} />
+              <RankCard rank={state.rank} />
             </section>
           </main>
           <EnemyPicker enemies={state.enemies} source={state.enemySource} detection={state.detection} rolePref={state.rolePref} role={r.role} />

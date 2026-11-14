@@ -9,6 +9,7 @@
 const { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, Menu, Tray, nativeImage, screen, shell } = require("electron");
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
@@ -47,7 +48,7 @@ const settingsFile = () => path.join(app.getPath("userData"), "overlay.json");
 /**
  * @typedef {{ x: number; y: number; w: number; h: number }} Rect01  fractions of the screen
  * @typedef {{ radiant: Rect01; dire: Rect01; displayId: number }} Calibration
- * @typedef {{ bounds?: Electron.Rectangle; calibration?: Calibration }} Settings
+ * @typedef {{ bounds?: Electron.Rectangle; calibration?: Calibration; autostart?: boolean }} Settings
  */
 
 /** @returns {Settings} */
@@ -101,25 +102,112 @@ async function serverUp() {
   }
 }
 
+let quitting = false;
+let starting = false;
+
+// ── stay out of the game's way ────────────────────────────────────────────────
+// Every coach process runs at below-normal CPU priority, so when Dota needs the CPU it always wins.
+// The coach only reacts to GSI updates a couple of times a second, so it never notices the difference.
+const BELOW_NORMAL = os.constants.priority.PRIORITY_BELOW_NORMAL;
+/** @type {Set<number>} */
+const lowered = new Set();
+/** @param {number} pid */
+function lowerPriority(pid) {
+  if (lowered.has(pid)) return;
+  try {
+    os.setPriority(pid, BELOW_NORMAL);
+    lowered.add(pid);
+  } catch {
+    /* process already gone */
+  }
+}
+/** Electron's own helper processes (GPU, renderer, network) appear after startup; catch them as they do */
+function lowerAppPriority() {
+  for (const m of app.getAppMetrics()) lowerPriority(m.pid);
+}
+
+/** Server stdout/stderr go here. Trimmed to the last ~1 MB on each start so it can't grow forever. */
+function serverLogFile() {
+  const file = path.join(app.getPath("userData"), "server.log");
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const size = fs.existsSync(file) ? fs.statSync(file).size : 0;
+    if (size > 2 * 1024 * 1024) {
+      const buf = fs.readFileSync(file);
+      fs.writeFileSync(file, buf.subarray(buf.length - 1024 * 1024));
+    }
+  } catch {
+    /* logging is best effort */
+  }
+  return file;
+}
+
 /** Start the coach server if nobody else has. Uses the system `node` (the one that ran npm install). */
 async function ensureServer() {
+  if (starting || quitting) return;
   if (await serverUp()) return;
-  console.log("[overlay] starting the coach server…");
-  serverProc = spawn("node", ["--import", "tsx", "server/src/index.ts"], {
-    cwd: ROOT,
-    stdio: "inherit",
-    env: process.env,
-    shell: process.platform === "win32",
-  });
-  serverProc.on("exit", (code) => {
-    if (code) console.error(`[overlay] server exited with code ${code}`);
-    serverProc = null;
-  });
-  for (let i = 0; i < 60; i++) {
-    if (await serverUp()) return;
-    await new Promise((r) => setTimeout(r, 500));
+  starting = true;
+  try {
+    console.log(`[overlay] starting the coach server… (log: ${serverLogFile()})`);
+    // The server runs without a console window and writes to a log file, so the overlay can be started
+    // with no terminal at all (and a stray Ctrl+C in some terminal can't take the server down).
+    const log = fs.openSync(serverLogFile(), "a");
+    fs.writeSync(log, `\n==== ${new Date().toISOString()} server start ====\n`);
+    // Prefer the prebuilt bundle (plain node, no TypeScript compiler loaded at runtime: faster start, less
+    // memory). Fall back to tsx when it hasn't been built, e.g. `npm start -w overlay` on a fresh clone.
+    const bundle = path.join(ROOT, "server", "dist", "index.js");
+    const args = fs.existsSync(bundle) ? [bundle] : ["--import", "tsx", "server/src/index.ts"];
+    // No shell: node.exe is found on PATH directly, and Node warns (DEP0190) about args passed through a shell
+    const proc = spawn("node", args, {
+      cwd: ROOT,
+      stdio: ["ignore", log, log],
+      env: process.env,
+      windowsHide: true,
+    });
+    fs.closeSync(log); // the child keeps its own handle
+    proc.on("error", (err) => console.error("[overlay] could not start the server (is Node.js on PATH?):", err.message));
+    if (proc.pid) lowerPriority(proc.pid);
+    serverProc = proc;
+    proc.on("exit", (code) => {
+      if (code && !quitting) console.error(`[overlay] server exited with code ${code}`);
+      if (serverProc === proc) serverProc = null;
+    });
+    for (let i = 0; i < 60; i++) {
+      if (await serverUp()) return;
+      if (quitting) return;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    console.error("[overlay] server did not come up within 30s. Run `npm start` manually to see the error.");
+  } finally {
+    starting = false;
   }
-  console.error("[overlay] server did not come up within 30s. Run `npm start` manually to see the error.");
+}
+
+// ── server watchdog ───────────────────────────────────────────────────────────
+// If the server dies (crash, Ctrl+C in its console, killed by hand) the overlay would otherwise sit on
+// "server offline" forever. Check every few seconds and start it again; the overlay page reconnects
+// its WebSocket by itself. Restarts back off so a server that crashes on boot doesn't spin.
+const WATCHDOG_INTERVAL_MS = 5000;
+const RESTART_BACKOFF_MS = [0, 5_000, 15_000, 30_000, 60_000];
+let restartCount = 0;
+let nextRestartAt = 0;
+let healthySince = 0;
+
+async function watchdogTick() {
+  if (quitting || starting) return;
+  lowerAppPriority();
+  if (await serverUp()) {
+    if (!healthySince) healthySince = Date.now();
+    // A minute of uptime means the last restart worked; forget the backoff
+    if (restartCount && Date.now() - healthySince > 60_000) restartCount = 0;
+    return;
+  }
+  healthySince = 0;
+  if (Date.now() < nextRestartAt) return;
+  console.warn("[overlay] coach server is not responding, restarting it…");
+  restartCount++;
+  nextRestartAt = Date.now() + RESTART_BACKOFF_MS[Math.min(restartCount, RESTART_BACKOFF_MS.length - 1)];
+  await ensureServer();
 }
 
 // ── window ────────────────────────────────────────────────────────────────────
@@ -221,6 +309,10 @@ function refreshTray() {
       { type: "separator" },
       { label: loadSettings().calibration ? "Recalibrate enemy detection…" : "Set up enemy detection…", click: () => void calibrate() },
       { label: "Open full dashboard", click: () => shell.openExternal(BASE) },
+      { label: "Open server log", click: () => void shell.openPath(serverLogFile()) },
+      ...(process.platform === "win32"
+        ? [{ label: "Start with Windows", type: /** @type {const} */ ("checkbox"), checked: autostartEnabled(), click: () => setAutostart(!autostartEnabled()) }]
+        : []),
       {
         label: "Reset position",
         click: () => {
@@ -233,6 +325,25 @@ function refreshTray() {
       { label: "Quit Dota Coach overlay", click: () => app.quit() },
     ]),
   );
+}
+
+// ── start with Windows ────────────────────────────────────────────────────────
+// Login starts the same no-window launcher as the desktop icon (run-overlay.vbs), so updates and the
+// server come up exactly as they do by hand. On by default the first time; the tray checkbox turns it off.
+const LOGIN_ITEM = {
+  path: path.join(process.env.WINDIR ?? "C:\\Windows", "System32", "wscript.exe"),
+  args: [path.join(ROOT, "run-overlay.vbs")],
+};
+
+function autostartEnabled() {
+  return app.getLoginItemSettings(LOGIN_ITEM).openAtLogin;
+}
+
+/** @param {boolean} on */
+function setAutostart(on) {
+  app.setLoginItemSettings({ ...LOGIN_ITEM, openAtLogin: on, name: "Dota Coach" });
+  saveSettings({ autostart: on });
+  refreshTray();
 }
 
 // ── enemy detection (top-bar portraits) ──────────────────────────────────────
@@ -377,6 +488,14 @@ if (!app.requestSingleInstanceLock()) {
   // Transparency needs compositing; some Linux GPUs draw a black box without this.
   if (process.platform === "linux") app.commandLine.appendSwitch("enable-transparent-visuals");
 
+  // A small text panel doesn't need the GPU. Software rendering keeps the overlay off the graphics card
+  // the game is using (no shared GPU queue, no driver-level hiccups) and drops the ~100 MB GPU process.
+  // Set COACH_OVERLAY_GPU=1 to turn hardware acceleration back on if text ever looks wrong.
+  if (process.env.COACH_OVERLAY_GPU !== "1") app.disableHardwareAcceleration();
+  // Keep V8 small: the overlay page holds almost nothing.
+  app.commandLine.appendSwitch("js-flags", "--max-old-space-size=128");
+  lowerPriority(process.pid);
+
   app.whenReady().then(async () => {
     await ensureServer();
     createWindow();
@@ -384,6 +503,9 @@ if (!app.requestSingleInstanceLock()) {
     tray = new Tray(nativeImage.createFromPath(path.join(__dirname, "icon.png")));
     tray.setToolTip("Dota Coach overlay");
     setInterval(() => void detectionTick(), DETECT_INTERVAL_MS);
+    setInterval(() => void watchdogTick(), WATCHDOG_INTERVAL_MS);
+    lowerAppPriority();
+    if (process.platform === "win32" && loadSettings().autostart === undefined) setAutostart(true);
     tray.on("click", toggleVisible);
     refreshTray();
 
@@ -395,6 +517,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on("second-instance", () => win?.showInactive());
   app.on("will-quit", () => {
+    quitting = true;
     globalShortcut.unregisterAll();
     serverProc?.kill();
   });

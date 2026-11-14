@@ -27,6 +27,11 @@ const advisor = new Advisor({
 const state = new CoachState(advisor, undefined, undefined, settings);
 const { server } = createApp(state, advisor);
 
+// Dota closed (or a mock run ended): stop showing the last game as if it were live
+setInterval(() => {
+  if (state.expireIfStale()) console.log("[gsi] no data from Dota for a while; showing the waiting screen");
+}, 5_000).unref();
+
 // Lobby players from server_log.txt. Restarts when the path or the toggle changes in settings.
 const matchLog = new ServerLogWatcher((lobby) => state.ingestLobby(lobby));
 state.matchLogStatus = () => (settings.get().matchInfo.enabled ? matchLog.status : null);

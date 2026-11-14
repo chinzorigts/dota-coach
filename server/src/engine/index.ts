@@ -12,6 +12,8 @@ export interface EngineContext {
   popularity: ItemPopularity | null;
   enemies: string[];
   ai: { items: { item: string; reason: string }[]; skillPriority: string[] } | null;
+  /** Recommendations replaced by a different purchase this match */
+  skipped?: string[];
   /** From the settings screen; defaults apply when absent */
   prefs?: AlertPrefs & { timers: Record<string, boolean> };
 }
@@ -23,6 +25,7 @@ export function buildReport(s: GameSnapshot, ctx: EngineContext): CoachReport {
     popularity: ctx.popularity,
     enemies: ctx.enemies,
     aiItems: ctx.ai?.items ?? [],
+    skipped: ctx.skipped,
   });
   const skills = recommendSkill(s, ctx.ai?.skillPriority ?? null);
   const p = s.player;

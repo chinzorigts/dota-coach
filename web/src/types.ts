@@ -45,7 +45,7 @@ export interface AiAdvice {
   tips: string[];
   at: number;
   clock: number;
-  reason: "hero" | "death" | "minute" | "enemies" | "manual";
+  reason: "hero" | "death" | "minute" | "enemies" | "purchase" | "manual";
   question?: string;
 }
 
@@ -64,6 +64,11 @@ export interface CoachState {
     lastAt: number;
     error: string | null;
   };
+  benchmark: BenchmarkView | null;
+  /** What you bought this match; followed = it was on the list */
+  purchases: Purchase[];
+  rank: RankView;
+  draft: DraftView | null;
   match: MatchInfo | null;
   matchLog: { path: string | null; exists: boolean; lastLobbyAt: number | null; error: string | null } | null;
   rolePref: "auto" | "core" | "support";
@@ -80,7 +85,7 @@ export interface Settings {
     model: string;
     effort: "low" | "medium" | "high";
     autoIntervalSec: number;
-    triggers: { hero: boolean; death: boolean; periodic: boolean; enemies: boolean };
+    triggers: { hero: boolean; death: boolean; periodic: boolean; enemies: boolean; purchase: boolean };
   };
   coach: {
     defaultRole: "auto" | "core" | "support";
@@ -91,6 +96,72 @@ export interface Settings {
   overlay: { sections: Record<string, boolean>; opacity: number; scale: number; sound: boolean; soundVolume: number };
   detection: { enabled: boolean };
   matchInfo: { enabled: boolean; logPath: string };
+  rank: { mmr: number | null; autoAdjust: boolean; perGame: number };
+  draft: { position: Position };
+}
+
+// Keep in sync with server/src/engine/purchases.ts
+export interface Purchase { item: string; name: string; clock: number; followed: boolean; replaced: string[] }
+
+/** 1 safe lane carry, 2 mid, 3 offlane, 4 soft support, 5 hard support; 0 = not set */
+export type Position = 0 | 1 | 2 | 3 | 4 | 5;
+
+// Keep in sync with server/src/engine/benchmarks.ts
+export interface StatRow {
+  key: "kills" | "deaths" | "assists" | "lastHits" | "denies" | "gpm" | "xpm";
+  label: string;
+  value: number;
+  heroMedian: number | null;
+  heroPercentile: number | null;
+  personal: number | null;
+  better: "higher" | "lower";
+  verdict: "good" | "ok" | "bad" | null;
+}
+
+export interface BenchmarkView {
+  minute: number;
+  early: boolean;
+  rows: StatRow[];
+  killParticipation: number | null;
+  hero: "ok" | "loading" | "none";
+  personal: "ok" | "loading" | "none";
+  personalGames: number | null;
+}
+
+// Keep in sync with server/src/engine/rank.ts
+export interface RankTarget { label: string; mmr: number; remaining: number; wins: number }
+export interface RankView {
+  source: "mmr" | "estimate" | "medal" | "none";
+  approximate: boolean;
+  mmr: number | null;
+  label: string | null;
+  medal: string | null;
+  stars: number | null;
+  openDotaLabel: string | null;
+  nextStar: RankTarget | null;
+  nextMedal: RankTarget | null;
+  progress: number | null;
+  perGame: number;
+  lastChange: { delta: number; matchId: string; at: number } | null;
+  estimated: true;
+}
+
+// Keep in sync with server/src/engine/draft.ts
+export interface PickSuggestion {
+  hero: string;
+  name: string;
+  icon: string;
+  score: number;
+  winRate: number | null;
+  fit: number;
+  reasons: { enemy: string; advantage: number }[];
+}
+export interface DraftView {
+  position: Position;
+  enemies: string[];
+  status: "ok" | "loading" | "no-data";
+  bracket: number | null;
+  suggestions: PickSuggestion[];
 }
 
 export interface MatchPlayer {

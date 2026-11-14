@@ -297,3 +297,74 @@ html.overlay-root, html.overlay-root body { background: transparent; overflow: h
   .set-range { grid-template-columns: 1fr 56px; }
   .set-range label { grid-column: 1 / -1; }
 }
+
+/* ── you vs average ───────────────────────────────────────────── */
+.cmp-head, .rank-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); margin-bottom: var(--s2); }
+.cmp-head h2, .rank-head h2 { margin: 0; }
+.cmp-head span { font-size: 13px; color: var(--muted); }
+.cmp-head b { color: var(--text); font: 600 15px var(--f-num); }
+.cmp-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.cmp-table th, .cmp-table td { padding: 5px 4px; text-align: left; border-bottom: 1px solid var(--line); }
+.cmp-table thead th { font-size: 12px; font-weight: 500; color: var(--muted); }
+.cmp-table tbody th { font-weight: 500; }
+.cmp-table .num { font: 600 16px var(--f-num); font-variant-numeric: tabular-nums; }
+.cmp-table .num.muted { color: var(--muted); font-weight: 500; }
+.cmp-pct { position: relative; display: block; width: 64px; height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
+.cmp-pct span { position: absolute; inset: 0 auto 0 0; background: var(--gold); border-radius: 3px; }
+.cmp-pct i { position: absolute; left: 50%; top: -1px; bottom: -1px; width: 1px; background: var(--text); opacity: 0.5; }
+.cmp-v { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.cmp-v.good { color: var(--radiant); }
+.cmp-v.ok { color: var(--muted); }
+.cmp-v.bad { color: var(--dire); }
+.cmp-v.none { color: var(--line); }
+.cmp-early { margin: 0 0 var(--s2); font-size: 13px; color: var(--warn); }
+.cmp-note { margin: var(--s2) 0 0; font-size: 12px; color: var(--muted); }
+.cmp { margin-top: var(--s3); }
+
+/* ── rank ─────────────────────────────────────────────────────── */
+.rank { margin-top: var(--s3); }
+.rank-mmr { font: 600 18px var(--f-num); color: var(--gold); }
+.rank-bar { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; margin-bottom: var(--s2); }
+.rank-bar span { display: block; height: 100%; background: var(--gold); }
+.rank-next { margin: 0; display: grid; gap: 4px; }
+.rank-next div { display: flex; justify-content: space-between; gap: var(--s2); font-size: 14px; }
+.rank-next dt { color: var(--muted); }
+.rank-next dd { margin: 0; font: 600 15px var(--f-num); }
+.rank-last { margin: var(--s2) 0 0; font-size: 13px; display: flex; gap: var(--s2); align-items: center; }
+button.link { background: none; border: 0; padding: 0; color: var(--gold); cursor: pointer; font-size: 13px; text-decoration: underline; }
+
+/* ── draft ────────────────────────────────────────────────────── */
+.grid.pregame { grid-template-columns: minmax(0, 1fr) 340px; }
+.draft-pos { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: var(--s3); }
+.draft-pos button { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; font-size: 13px; cursor: pointer; color: var(--text); }
+.draft-pos button.on { border-color: var(--gold); color: var(--gold); }
+.draft-enemies { display: flex; flex-wrap: wrap; gap: var(--s2); align-items: center; margin-bottom: var(--s3); }
+.draft-enemies .suggest { top: calc(100% + 4px); bottom: auto; }
+.draft-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.draft-sug { display: flex; gap: var(--s2); align-items: center; }
+.draft-sug strong { font-weight: 600; }
+.draft-sug small { color: var(--muted); font-size: 12px; }
+.draft-sug small.pos { color: var(--radiant); }
+.draft-sug small.neg { color: var(--dire); }
+@media (max-width: 900px) { .grid.pregame { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── overlay additions ────────────────────────────────────────── */
+.ov-cmp { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); }
+.ov-cmp b { font: 600 14px var(--f-num); color: var(--text); }
+.ov-cmp small { font-size: 11px; }
+.ov-cmp .good b { color: var(--radiant); }
+.ov-cmp .bad b { color: var(--dire); }
+.ov-rank { margin: 0; font-size: 12px; color: var(--muted); }
+.ov-rank b { color: var(--gold); font: 600 14px var(--f-num); }
+.ov-draft small { color: var(--muted); font-size: 11px; }
+.ov-draft .draft-list { gap: 3px; margin-top: 2px; }
+.ov-draft .draft-sug { font-size: 13px; }
+.cmp-head { flex-wrap: wrap; }
+.cmp-head h2 { white-space: nowrap; }
+.cmp-table .cmp-pct { width: 44px; }
+.cmp-table th, .cmp-table td { padding: 5px 3px; }
+
+/* ── off-plan purchases ───────────────────────────────────────── */
+.offplan { margin: 0 0 var(--s2); padding: 6px 10px; font-size: 13px; border-radius: 6px; background: rgb(212 167 58 / 0.1); border: 1px solid var(--gold-dim); }
+.offplan b { color: var(--gold); }
+.ov-offplan { margin: 0; font-size: 12px; color: var(--gold); }

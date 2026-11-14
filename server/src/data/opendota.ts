@@ -83,6 +83,11 @@ export interface PlayerSummary {
   rankTier: number | null;
   leaderboardRank: number | null;
   rank: string | null;
+  /**
+   * OpenDota's MMR estimate from the ranks of recent public matches (`computed_mmr`). Valve's real MMR is only
+   * shown on your own in-game profile; null when OpenDota has too little to go on.
+   */
+  computedMmr?: number | null;
   /** Last RECENT_GAMES public matches; null when OpenDota couldn't deliver them this time */
   recent: { games: number; wins: number; losses: number; winRate: number | null } | null;
   topHeroes: { heroId: number; games: number; wins: number }[];
@@ -112,7 +117,12 @@ interface RawRecentMatch { hero_id?: number | string; player_slot?: number; radi
  * `recentRaw` undefined = that request failed (stats unknown); [] = no public matches. Exported for tests.
  */
 export function parsePlayerSummary(accountId: number, profileRaw: unknown, recentRaw: unknown, now = Date.now()): PlayerSummary {
-  const p = (profileRaw ?? {}) as { profile?: { personaname?: string; avatarmedium?: string } | null; rank_tier?: number | null; leaderboard_rank?: number | null };
+  const p = (profileRaw ?? {}) as {
+    profile?: { personaname?: string; avatarmedium?: string } | null;
+    rank_tier?: number | null;
+    leaderboard_rank?: number | null;
+    computed_mmr?: number | null;
+  };
   const matches = Array.isArray(recentRaw) ? (recentRaw as RawRecentMatch[]).slice(0, RECENT_GAMES) : null;
   let recent: PlayerSummary["recent"] = null;
   let topHeroes: PlayerSummary["topHeroes"] = [];
@@ -144,6 +154,7 @@ export function parsePlayerSummary(accountId: number, profileRaw: unknown, recen
     rankTier,
     leaderboardRank,
     rank: rankLabel(rankTier, leaderboardRank),
+    computedMmr: typeof p.computed_mmr === "number" && p.computed_mmr > 0 ? Math.round(p.computed_mmr) : null,
     recent,
     topHeroes,
     // No profile at all, or a profile with zero recent public matches ("Expose Public Match Data" off)
@@ -172,11 +183,11 @@ async function getJson(pathname: string, timeoutMs = 8000): Promise<unknown> {
   });
 }
 
-async function loadPlayer(accountId: number): Promise<PlayerSummary | null> {
+async function loadPlayer(accountId: number, fresh = false): Promise<PlayerSummary | null> {
   const file = path.join(config.cacheDir, "players", `${accountId}.json`);
   try {
     const cached = JSON.parse(await fs.readFile(file, "utf8")) as PlayerSummary;
-    if (Date.now() - cached.fetchedAt < PLAYER_TTL_MS) return cached;
+    if (!fresh && Date.now() - cached.fetchedAt < PLAYER_TTL_MS) return cached;
   } catch {
     /* no cache */
   }
@@ -206,16 +217,232 @@ async function loadPlayer(accountId: number): Promise<PlayerSummary | null> {
 
 const playerMemo = new Map<number, Promise<PlayerSummary | null>>();
 
-export function getPlayerSummary(accountId: number): Promise<PlayerSummary | null> {
-  let p = playerMemo.get(accountId);
+/** `fresh` skips both caches, e.g. our own profile right after a game when the medal may have changed */
+export function getPlayerSummary(accountId: number, fresh = false): Promise<PlayerSummary | null> {
+  let p = fresh ? undefined : playerMemo.get(accountId);
   if (!p) {
-    p = loadPlayer(accountId);
+    p = loadPlayer(accountId, fresh);
     playerMemo.set(accountId, p);
     p.then((v) => {
       // Failures retry next time; successes expire with the disk cache
       if (v === null || (!v.recent && !v.isPrivate)) playerMemo.delete(accountId);
       else setTimeout(() => playerMemo.delete(accountId), PLAYER_TTL_MS).unref?.();
     });
+  }
+  return p;
+}
+
+// ---------------------------------------------------------------------------------------------
+// "How am I doing on this hero?" Two reference points, both from OpenDota:
+//  - hero benchmarks: percentiles of per-minute stats over recent public matches of the hero (all players)
+//  - the player's own totals on the hero (needs "Expose Public Match Data"), which also cover deaths/denies/assists
+
+export interface BenchPoint {
+  percentile: number; // 0..1
+  value: number;
+}
+
+/** Per-minute stats (gold/xp are already per minute). Each list is sorted by percentile. */
+export interface HeroBenchmarks {
+  heroId: number;
+  goldPerMin: BenchPoint[];
+  xpPerMin: BenchPoint[];
+  killsPerMin: BenchPoint[];
+  lastHitsPerMin: BenchPoint[];
+}
+
+export function parseBenchmarks(heroId: number, raw: unknown): HeroBenchmarks | null {
+  const result = (raw as { result?: Record<string, unknown> } | null)?.result;
+  if (!result) return null;
+  const list = (key: string): BenchPoint[] =>
+    (Array.isArray(result[key]) ? (result[key] as { percentile?: unknown; value?: unknown }[]) : [])
+      .map((p) => ({ percentile: Number(p.percentile), value: Number(p.value) }))
+      .filter((p) => Number.isFinite(p.percentile) && Number.isFinite(p.value))
+      .sort((a, b) => a.percentile - b.percentile);
+  const b: HeroBenchmarks = {
+    heroId,
+    goldPerMin: list("gold_per_min"),
+    xpPerMin: list("xp_per_min"),
+    killsPerMin: list("kills_per_min"),
+    lastHitsPerMin: list("last_hits_per_min"),
+  };
+  return b.goldPerMin.length || b.xpPerMin.length ? b : null;
+}
+
+/** The player's own averages on one hero. Counting stats are per minute; gpm/xpm are per-game averages. */
+export interface PlayerHeroTotals {
+  accountId: number;
+  heroId: number;
+  games: number;
+  perMin: { kills: number; deaths: number; assists: number; lastHits: number; denies: number };
+  gpm: number;
+  xpm: number;
+  fetchedAt: number;
+}
+
+/** /players/:id/totals?hero_id= answers [{ field, n, sum }]. Too few games is treated as "no data". */
+export function parseHeroTotals(accountId: number, heroId: number, raw: unknown, now = Date.now()): PlayerHeroTotals | null {
+  if (!Array.isArray(raw)) return null;
+  const by = new Map<string, { n: number; sum: number }>();
+  for (const r of raw as { field?: unknown; n?: unknown; sum?: unknown }[]) {
+    if (typeof r.field === "string") by.set(r.field, { n: Number(r.n) || 0, sum: Number(r.sum) || 0 });
+  }
+  const duration = by.get("duration");
+  const games = duration?.n ?? 0;
+  const minutes = (duration?.sum ?? 0) / 60;
+  if (games < MIN_PERSONAL_GAMES || minutes <= 0) return null;
+  const rate = (field: string) => (by.get(field)?.sum ?? 0) / minutes;
+  const avg = (field: string) => {
+    const f = by.get(field);
+    return f && f.n ? f.sum / f.n : 0;
+  };
+  return {
+    accountId,
+    heroId,
+    games,
+    perMin: { kills: rate("kills"), deaths: rate("deaths"), assists: rate("assists"), lastHits: rate("last_hits"), denies: rate("denies") },
+    gpm: avg("gold_per_min"),
+    xpm: avg("xp_per_min"),
+    fetchedAt: now,
+  };
+}
+
+/** Fewer games than this on the hero says more about luck than about the player */
+const MIN_PERSONAL_GAMES = 3;
+const BENCH_TTL_MS = 24 * 60 * 60 * 1000;
+const TOTALS_TTL_MS = 6 * 60 * 60 * 1000;
+
+async function cachedJson<T>(file: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
+  try {
+    const stat = await fs.stat(file);
+    if (Date.now() - stat.mtimeMs < ttlMs) return JSON.parse(await fs.readFile(file, "utf8")) as T;
+  } catch {
+    /* no cache */
+  }
+  const value = await fetcher();
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify(value));
+  return value;
+}
+
+const benchMemo = new Map<number, Promise<HeroBenchmarks | null>>();
+
+export function getHeroBenchmarks(heroId: number): Promise<HeroBenchmarks | null> {
+  let p = benchMemo.get(heroId);
+  if (!p) {
+    p = cachedJson(path.join(config.cacheDir, `benchmarks-${heroId}.json`), BENCH_TTL_MS, () => getJson(`/benchmarks?hero_id=${heroId}`))
+      .then((raw) => parseBenchmarks(heroId, raw))
+      .catch((err) => {
+        console.warn(`[opendota] benchmarks for hero ${heroId} failed:`, (err as Error).message);
+        return null;
+      });
+    benchMemo.set(heroId, p);
+    p.then((v) => v === null && benchMemo.delete(heroId));
+  }
+  return p;
+}
+
+const totalsMemo = new Map<string, Promise<PlayerHeroTotals | null>>();
+
+/** null = private profile, too few games on the hero, or the request failed */
+export function getPlayerHeroTotals(accountId: number, heroId: number): Promise<PlayerHeroTotals | null> {
+  const key = `${accountId}-${heroId}`;
+  let p = totalsMemo.get(key);
+  if (!p) {
+    p = cachedJson(path.join(config.cacheDir, "totals", `${key}.json`), TOTALS_TTL_MS, () => getJson(`/players/${accountId}/totals?hero_id=${heroId}`))
+      .then((raw) => parseHeroTotals(accountId, heroId, raw))
+      .catch((err) => {
+        console.warn(`[opendota] totals for ${key} failed:`, (err as Error).message);
+        return null;
+      });
+    totalsMemo.set(key, p);
+  }
+  return p;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Draft help: overall win rates per medal bracket (/heroStats) and head-to-head records (/heroes/:id/matchups).
+
+/** Win rate and pick count of one hero, overall and per medal bracket (1 Herald .. 8 Immortal) */
+export interface HeroStat {
+  heroId: number;
+  picks: number;
+  winRate: number | null;
+  byBracket: Record<number, { picks: number; winRate: number | null }>;
+}
+
+export function parseHeroStats(raw: unknown): Map<number, HeroStat> {
+  const out = new Map<number, HeroStat>();
+  if (!Array.isArray(raw)) return out;
+  for (const h of raw as Record<string, unknown>[]) {
+    const heroId = Number(h.id);
+    if (!Number.isFinite(heroId)) continue;
+    const byBracket: HeroStat["byBracket"] = {};
+    let picks = 0;
+    let wins = 0;
+    for (let b = 1; b <= 8; b++) {
+      const p = Number(h[`${b}_pick`]) || 0;
+      const w = Number(h[`${b}_win`]) || 0;
+      byBracket[b] = { picks: p, winRate: p ? w / p : null };
+      picks += p;
+      wins += w;
+    }
+    out.set(heroId, { heroId, picks, winRate: picks ? wins / picks : null, byBracket });
+  }
+  return out;
+}
+
+/** heroId -> { games, wins } for the hero these matchups belong to (wins are that hero's wins) */
+export type Matchups = Map<number, { games: number; wins: number }>;
+
+export function parseMatchups(raw: unknown): Matchups {
+  const out: Matchups = new Map();
+  if (!Array.isArray(raw)) return out;
+  for (const m of raw as { hero_id?: unknown; games_played?: unknown; wins?: unknown }[]) {
+    const id = Number(m.hero_id);
+    const games = Number(m.games_played) || 0;
+    if (Number.isFinite(id) && games > 0) out.set(id, { games, wins: Number(m.wins) || 0 });
+  }
+  return out;
+}
+
+let heroStatsMemo: Promise<Map<number, HeroStat> | null> | null = null;
+
+export function getHeroStats(): Promise<Map<number, HeroStat> | null> {
+  if (!heroStatsMemo) {
+    const p = cachedJson(path.join(config.cacheDir, "herostats.json"), BENCH_TTL_MS, () => getJson("/heroStats"))
+      .then((raw) => {
+        const m = parseHeroStats(raw);
+        return m.size ? m : null;
+      })
+      .catch((err) => {
+        console.warn("[opendota] heroStats failed:", (err as Error).message);
+        return null;
+      });
+    heroStatsMemo = p;
+    p.then((v) => {
+      if (v === null) heroStatsMemo = null;
+    });
+  }
+  return heroStatsMemo;
+}
+
+const matchupMemo = new Map<number, Promise<Matchups | null>>();
+
+export function getMatchups(heroId: number): Promise<Matchups | null> {
+  let p = matchupMemo.get(heroId);
+  if (!p) {
+    p = cachedJson(path.join(config.cacheDir, `matchups-${heroId}.json`), BENCH_TTL_MS, () => getJson(`/heroes/${heroId}/matchups`))
+      .then((raw) => {
+        const m = parseMatchups(raw);
+        return m.size ? m : null;
+      })
+      .catch((err) => {
+        console.warn(`[opendota] matchups for hero ${heroId} failed:`, (err as Error).message);
+        return null;
+      });
+    matchupMemo.set(heroId, p);
+    p.then((v) => v === null && matchupMemo.delete(heroId));
   }
   return p;
 }

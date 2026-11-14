@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
+    "bundle": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --packages=external --log-level=warning --outfile=dist/index.js",
     "build": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "mock": "tsx src/tools/mock-gsi.ts",
@@ -22,6 +23,7 @@
     "@types/node": "^26.6.6",
     "@types/pngjs": "^6.0.5",
     "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"

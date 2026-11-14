@@ -178,6 +178,11 @@ export function createApp(
         return json(res, 404, { error: "not found" });
       }
 
+      if (req.method === "POST" && url.pathname === "/api/rank/undo") {
+        if (!isLocal(req)) return json(res, 403, { error: "Only on the PC running Dota Coach" });
+        return json(res, 200, { undone: state.undoLastRankChange(), rank: state.rank() });
+      }
+
       if (req.method === "POST" && url.pathname === "/api/role") {
         const body = JSON.parse((await readBody(req)) || "{}");
         if (!["auto", "core", "support"].includes(body.role)) return json(res, 400, { error: "role must be auto|core|support" });
