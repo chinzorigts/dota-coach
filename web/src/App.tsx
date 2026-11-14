@@ -48,7 +48,8 @@ export default function App() {
         <Settings onClose={() => (location.hash = "")} />
       ) : !state || !s?.hero || !r ? (
         <>
-          <Waiting connected={connected} hasGsi={Boolean(state?.lastGsiAt)} gameState={s?.gameState} />
+          {/* Dota sends at least every 30s while running; older data means it isn't running now */}
+          <Waiting connected={connected} hasGsi={gsiAge < 75} gameState={s?.gameState} />
           {state && (
             <main className="grid pregame">
               {state.draft && <section className="col"><DraftPanel draft={state.draft} /></section>}

@@ -176,6 +176,21 @@ describe("rank", () => {
   });
 });
 
+describe("stale game data", () => {
+  it("drops the last game once Dota has been quiet past the heartbeat", () => {
+    const state = new CoachState(new Advisor({ runtime: rt(false), call: null }), async () => null, undefined as never, new SettingsStore(null), async () => null, async () => null, async () => null);
+    state.draftDeps = { loadHeroStats: async () => null, loadMatchups: async () => null }; // no network in tests
+    state.ingest(rawGame());
+    expect(state.expireIfStale(state.lastGsiAt + 30_000)).toBe(false);
+    expect(state.snapshot?.hero).toBeTruthy();
+    expect(state.expireIfStale(state.lastGsiAt + 80_000)).toBe(true);
+    expect(state.snapshot).toBeNull();
+    expect(state.report).toBeNull();
+    expect(state.draft()).not.toBeNull(); // back to the pre-game view
+    expect(state.expireIfStale(state.lastGsiAt + 90_000)).toBe(false);
+  });
+});
+
 describe("draft", () => {
   const jugg = getHero("npc_dota_hero_juggernaut")!;
   const cm = getHero("npc_dota_hero_crystal_maiden")!;

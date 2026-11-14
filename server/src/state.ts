@@ -21,6 +21,12 @@ import { suggestPicks, type DraftView } from "./engine/draft.js";
 import { classifyPurchase, newItems, type Purchase } from "./engine/purchases.js";
 import { ownedItems } from "./engine/items.js";
 
+/**
+ * Dota sends GSI at least every 30s while it runs (the cfg's heartbeat). Nothing for this long means the game was
+ * closed, or the data came from a test run (npm run mock), so the last game must not keep showing as live.
+ */
+export const GSI_STALE_MS = 75_000;
+
 /** OpenDota usually has a finished match parsed within ~20 minutes */
 const ME_REFRESH_AFTER_GAME_MS = 20 * 60 * 1000;
 
@@ -251,6 +257,15 @@ export class CoachState {
       allies: myTeam ? sided.filter((p) => p.team === myTeam).map(view) : sided.filter((p) => p.team === "radiant").map(view),
       enemies: myTeam ? sided.filter((p) => p.team !== myTeam).map(view) : sided.filter((p) => p.team === "dire").map(view),
     };
+  }
+
+  /** Forget the last game once GSI has gone quiet (called on a timer by index.ts). Returns true when it cleared. */
+  expireIfStale(now = Date.now()): boolean {
+    if (!this.snapshot || now - this.lastGsiAt < GSI_STALE_MS) return false;
+    this.snapshot = null;
+    this.report = null;
+    this.emit();
+    return true;
   }
 
   /** Compare the inventory with what we've seen this match; classify anything new against the last recommendations */
