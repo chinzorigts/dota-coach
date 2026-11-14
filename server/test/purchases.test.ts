@@ -44,6 +44,14 @@ describe("purchase detection", () => {
     expect(classifyPurchase("demon_edge", [rec("blink")], 600)).toBeNull();
   });
 
+  it("counts the TP slot as owned, even when the AI suggests a TP", () => {
+    const s = normalize(rawGame({ items: ["quelling_blade"], tp: true }));
+    const recs = recommendItems(s, { role: "core", popularity: null, enemies: [], aiItems: [{ item: "tpscroll", reason: "carry TP" }, { item: "quelling_blade", reason: "" }, { item: "magic_wand", reason: "" }] });
+    expect(recs.map((r) => r.key)).not.toContain("tpscroll");
+    expect(recs.map((r) => r.key)).not.toContain("quelling_blade");
+    expect(recs.map((r) => r.key)).toContain("magic_wand");
+  });
+
   it("stops suggesting other boots once upgraded boots are owned", () => {
     const s = normalize(rawGame({ items: ["phase_boots"] }));
     const recs = recommendItems(s, { role: "core", popularity: { start: [], early: ["power_treads", "blink"], mid: [], late: [] }, enemies: [], aiItems: [] });

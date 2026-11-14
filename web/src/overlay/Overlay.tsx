@@ -8,6 +8,26 @@ import { StatsCompareCompact } from "../components/StatsCompare";
 import { RankLine } from "../components/RankCard";
 import { DraftCompact } from "../components/DraftPanel";
 
+/** What the game is doing before your hero is in, so "waiting" never looks like "can't see the game" */
+function idleText(connected: boolean, gameState: string | undefined, gsiAgeMs: number | null): string {
+  if (!connected) return "Dota Coach: server offline";
+  if (gsiAgeMs === null || gsiAgeMs > 75_000) return "Dota Coach: waiting for Dota 2";
+  switch (gameState) {
+    case "DOTA_GAMERULES_STATE_HERO_SELECTION":
+    case "DOTA_GAMERULES_STATE_CUSTOM_GAME_SETUP":
+      return "Hero selection";
+    case "DOTA_GAMERULES_STATE_STRATEGY_TIME":
+      return "Strategy time";
+    case "DOTA_GAMERULES_STATE_WAIT_FOR_PLAYERS_TO_LOAD":
+    case "DOTA_GAMERULES_STATE_INIT":
+      return "Loading the match…";
+    case "DOTA_GAMERULES_STATE_POST_GAME":
+      return "Game over";
+    default:
+      return "Connected · waiting for a match";
+  }
+}
+
 /**
  * Compact HUD drawn over the game. Everything here must be readable in a glance,
  * so it shows only what changes a decision: next buy, next skill, danger, the nearest timers, AI summary.
@@ -61,7 +81,7 @@ export function Overlay() {
 
       {!connected || !s?.hero || !r ? (
         <>
-          <p className="ov-idle">{!connected ? "Dota Coach: server offline" : "Dota Coach: waiting for a game"}</p>
+          <p className="ov-idle">{idleText(connected, state?.snapshot?.gameState, state?.lastGsiAt ? Date.now() - state.lastGsiAt : null)}</p>
           {/* The lobby is known from match accept, before heroes are picked */}
           {connected && state?.match && show("opponents") && <OpponentsPanel match={state.match} />}
           {connected && state?.draft && show("draft") && <DraftCompact draft={state.draft} />}
