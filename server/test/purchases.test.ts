@@ -79,6 +79,21 @@ describe("purchase detection", () => {
     expect(any.some((r) => getItem(r.key)?.components.includes("ogre_axe"))).toBe(true);
   });
 
+  it("reads your courier's items from GSI and counts them as owned", async () => {
+    const { courierItems } = await import("../src/gsi/normalize.js");
+    const raw = rawGame({ items: ["power_treads"] });
+    raw.couriers = { courier0: { owner: 3, items: { item0: { name: "item_blink" }, item1: { name: "empty" } } } };
+    const s = normalize(raw);
+    expect(s.items.courier.map((i) => i.name)).toEqual(["blink"]);
+    const recs = recommendItems(s, { role: "core", popularity: { start: [], early: ["blink", "black_king_bar"], mid: [], late: [] }, enemies: [], aiItems: [] });
+    expect(recs.map((r) => r.key)).not.toContain("blink");
+    // Several couriers (spectating): only the one owned by our player slot
+    raw.player!.player_slot = 3;
+    raw.couriers = { courier0: { owner: 3, items: { item0: { name: "item_blink" } } }, courier1: { owner: 7, items: { item0: { name: "item_bfury" } } } };
+    expect(courierItems(raw).map((i) => i.name)).toEqual(["blink"]);
+    expect(normalize(rawGame()).items.courier).toEqual([]);
+  });
+
   it("keeps items riding the courier counted as owned", () => {
     const s = normalize(rawGame({ items: ["power_treads"] }));
     const recs = recommendItems(s, { role: "core", popularity: { start: [], early: ["blink", "black_king_bar"], mid: [], late: [] }, enemies: [], aiItems: [], inTransit: ["blink"] });

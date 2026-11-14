@@ -14,7 +14,7 @@ export const MODELS = [
 ] as const;
 export const EFFORTS = ["low", "medium", "high"] as const;
 export const TIMER_IDS = ["bounty", "power", "wisdom", "lotus", "daynight", "stack", "roshan"] as const;
-export const OVERLAY_SECTIONS = ["item", "skill", "neutral", "alerts", "enemies", "opponents", "timers", "ai", "benchmark", "rank", "recent", "draft"] as const;
+export const OVERLAY_SECTIONS = ["item", "skill", "neutral", "alerts", "enemies", "opponents", "timers", "ai", "benchmark", "rank", "draft"] as const;
 /** Dota positions: 1 safe lane carry, 2 mid, 3 offlane, 4 soft support, 5 hard support. 0 = not set */
 export const POSITIONS = [0, 1, 2, 3, 4, 5] as const;
 export type Position = (typeof POSITIONS)[number];

@@ -34,10 +34,10 @@ export function inferRole(heroName: string | undefined): Role {
   return h.roles.includes("Support") && !h.roles.includes("Carry") ? "support" : "core";
 }
 
-/** Everything you hold, including the dedicated TP and neutral slots (a TP there is still a TP you own) */
+/** Everything you hold: bag, backpack, stash, the courier, and the dedicated TP and neutral slots */
 export function ownedItems(s: GameSnapshot): string[] {
-  const { inventory, backpack, stash, teleport, neutral } = s.items;
-  return [...inventory, ...backpack, ...stash, teleport, neutral].flatMap((i) => (i ? [i.name] : []));
+  const { inventory, backpack, stash, teleport, neutral, courier } = s.items;
+  return [...inventory, ...backpack, ...stash, ...(courier ?? []), teleport, neutral].flatMap((i) => (i ? [i.name] : []));
 }
 
 /** Counts as owned if built, or if an owned item uses it as a component */

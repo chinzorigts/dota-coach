@@ -41,6 +41,9 @@ export interface RawGsi {
   player?: {
     steamid?: string;
     name?: string;
+    /** 0..9 across both teams; matches a courier's owner when several couriers are sent */
+    player_slot?: number;
+    team_slot?: number;
     activity?: string;
     kills?: number;
     deaths?: number;
@@ -102,6 +105,11 @@ export interface RawGsi {
   };
   abilities?: Record<string, RawAbility>;
   items?: Record<string, RawItem>;
+  /**
+   * Couriers (the "couriers" data provider). While playing GSI normally sends only yours; each lists the
+   * items it carries, keyed item0..itemN, with the owning player's id.
+   */
+  couriers?: Record<string, { owner?: number; items?: Record<string, RawItem & { owner?: number }> } | undefined>;
   previously?: unknown;
   added?: unknown;
 }

@@ -675,7 +675,7 @@ export class CoachState {
     const items: Record<string, string> = {};
     if (!s) return { abilities, items };
     for (const a of s.abilities) abilities[a.name] = getAbility(a.name).name;
-    const all = [...s.items.inventory, ...s.items.backpack, ...s.items.stash, s.items.teleport, s.items.neutral];
+    const all = [...s.items.inventory, ...s.items.backpack, ...s.items.stash, ...(s.items.courier ?? []), s.items.teleport, s.items.neutral];
     for (const i of all) if (i) items[i.name] = getItem(i.name)?.name ?? i.name;
     for (const i of this.advisor.status().advice?.next_items ?? []) items[i.item] = getItem(i.item)?.name ?? i.item;
     for (const k of this.purchases.flatMap((p) => p.replaced)) items[k] = getItem(k)?.name ?? k;

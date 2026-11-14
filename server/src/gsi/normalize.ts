@@ -78,6 +78,8 @@ export interface GameSnapshot {
     stash: ItemState[];
     teleport: ItemState | null;
     neutral: ItemState | null;
+    /** On your courier right now (bought straight onto it, or being delivered) */
+    courier: ItemState[];
   };
 }
 
@@ -213,6 +215,28 @@ export function normalize(raw: RawGsi, now = Date.now()): GameSnapshot {
       stash: pick("stash", 6),
       teleport: toItem("teleport0", items["teleport0"]),
       neutral: toItem("neutral0", items["neutral0"]),
+      courier: courierItems(raw),
     },
   };
+}
+
+/**
+ * Items on your courier. While playing, GSI sends only your own courier; if several arrive (spectating),
+ * keep the one(s) owned by you (player_slot / team_slot), and items whose own owner field says it's yours.
+ */
+export function courierItems(raw: RawGsi): ItemState[] {
+  const couriers = Object.values(raw.couriers ?? {}).filter((c): c is NonNullable<typeof c> => Boolean(c));
+  if (!couriers.length) return [];
+  const me = [raw.player?.player_slot, raw.player?.team_slot].filter((v): v is number => typeof v === "number");
+  const mine = couriers.length === 1 || !me.length ? couriers : couriers.filter((c) => typeof c.owner === "number" && me.includes(c.owner));
+  const out: ItemState[] = [];
+  for (const c of mine) {
+    for (const [key, it] of Object.entries(c.items ?? {})) {
+      // Several players can share a courier's bag in some modes: skip items that are clearly someone else's
+      if (me.length && typeof it?.owner === "number" && couriers.length > 1 && !me.includes(it.owner)) continue;
+      const item = toItem(`courier_${key}`, it);
+      if (item) out.push(item);
+    }
+  }
+  return out;
 }

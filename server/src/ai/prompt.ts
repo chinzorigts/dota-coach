@@ -70,7 +70,8 @@ export function buildUserPayload(
   bought?: { item: string; name: string; replaced: string[] }[],
 ) {
   const hero = s.hero ? getHero(s.hero.name) : undefined;
-  const ownedNames = [...s.items.inventory, ...s.items.backpack, ...s.items.stash].map((i) => i.name);
+  // Courier items count: they are bought, only not delivered yet
+  const ownedNames = [...s.items.inventory, ...s.items.backpack, ...s.items.stash, ...(s.items.courier ?? [])].map((i) => i.name);
   return {
     clock: mmss(s.clockTime),
     phase: report.phase,

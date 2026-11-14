@@ -41,6 +41,12 @@ let tray = null;
 /** @type {import("node:child_process").ChildProcess | null} */
 let serverProc = null;
 let locked = true;
+/** Grab-handle state: the watchdog interval and whether a window drag is in progress */
+/** @type {ReturnType<typeof setInterval> | undefined} */
+let gripWatch;
+let dragging = false;
+/** @type {ReturnType<typeof setTimeout> | undefined} */
+let dragEnd;
 
 // ── persisted window bounds ──────────────────────────────────────────────────
 const settingsFile = () => path.join(app.getPath("userData"), "overlay.json");
@@ -286,7 +292,12 @@ function createWindow() {
       // Without this the open/close sounds would stay silent.
       autoplayPolicy: "no-user-gesture-required",
     },
+    // Never appear before click-through is on: a window that shows first and goes click-through only after the
+    // page loads can swallow game clicks for a moment, and showing it normally can pull focus from the game.
+    show: false,
   });
+  if (locked) win.setIgnoreMouseEvents(true, { forward: true });
+  win.once("ready-to-show", () => win?.showInactive());
   // "screen-saver" keeps it above borderless-fullscreen games on Windows and macOS
   win.setAlwaysOnTop(true, "screen-saver");
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -321,7 +332,29 @@ function createWindow() {
   ipcMain.on("overlay:interactive", (e, on) => {
     if (!win || e.sender !== win.webContents || !locked) return;
     win.setIgnoreMouseEvents(!on, { forward: true });
+    clearInterval(gripWatch);
+    if (!on) return;
+    // Safety net: if the page misses the "pointer left" event, go back to click-through as soon as the
+    // pointer is anywhere but the handle's strip, so the overlay can never keep eating game clicks.
+    gripWatch = setInterval(() => {
+      if (!win || !locked) return clearInterval(gripWatch);
+      const p = screen.getCursorScreenPoint();
+      const b = win.getBounds();
+      const overGrip = p.x >= b.x + b.width / 2 - 40 && p.x <= b.x + b.width / 2 + 40 && p.y >= b.y && p.y <= b.y + 24;
+      // Mouse button held = dragging the window; keep it interactive until the drag ends
+      if (!overGrip && !dragging) {
+        win.setIgnoreMouseEvents(true, { forward: true });
+        clearInterval(gripWatch);
+      }
+    }, 250);
   });
+  // will-move fires repeatedly while dragging; treat the drag as over once it stops firing (or the move ends)
+  win.on("will-move", () => {
+    dragging = true;
+    clearTimeout(dragEnd);
+    dragEnd = setTimeout(() => (dragging = false), 1200);
+  });
+  win.on("moved", () => (dragging = false));
 
   win.on("closed", () => {
     win = null;
@@ -446,7 +479,7 @@ const TOPBAR = { inner: 140 / 1440, outer: 555 / 1440, top: 6 / 1440, bottom: 50
 /** Each slot loses this share of its width on both sides: the portraits are slanted at the edges */
 const SLOT_INSET = 0.1;
 
-/** Portrait rows for a display, as fractions of the screen (what the manual calibration also stores) @returns {Calibration} */
+/** Portrait rows for a display, as fractions of the screen (what the manual calibration also stores) @param {Electron.Display} display @returns {Calibration} */
 function autoCalibration(display) {
   const { width: W, height: H } = display.size;
   const span = ((TOPBAR.outer - TOPBAR.inner) * H) / W;

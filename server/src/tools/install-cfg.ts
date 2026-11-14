@@ -28,6 +28,7 @@ export function buildCfg(uri: string, token: string): string {
     "minimap"       "0"
     "roshan"        "1"
     "neutralitems"  "1"
+    "couriers"      "1"
   }
   "auth"
   {
