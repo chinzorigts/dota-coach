@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { playOverlaySound } from "./sounds";
 import { useCoach, post } from "../useCoach";
 import { Img } from "../components/Img";
 import { abilityImg, clock, gold as fmt, heroIcon } from "../format";
@@ -26,6 +27,17 @@ export function Overlay() {
       setCalibrated(m.calibrated);
     });
   }, []);
+
+  // Open/close sound on hotkey or tray toggle. Settings live in a ref so the listener is registered once.
+  const sound = useRef({ on: true, volume: 0.6 });
+  sound.current = { on: state?.settings.overlay.sound ?? true, volume: state?.settings.overlay.soundVolume ?? 0.6 };
+  useEffect(
+    () =>
+      bridge()?.onVisibility?.(({ visible }) => {
+        if (sound.current.on) playOverlaySound(visible ? "open" : "close", sound.current.volume);
+      }),
+    [],
+  );
 
   const s = state?.snapshot;
   const r = state?.report;

@@ -12,4 +12,11 @@ contextBridge.exposeInMainWorld("dotaOverlay", {
     ipcRenderer.on("overlay:mode", listener);
     return () => ipcRenderer.removeListener("overlay:mode", listener);
   },
+  /** Fired when the user shows/hides the overlay (hotkey or tray), not for calibration. @param {(e: { visible: boolean }) => void} cb */
+  onVisibility(cb) {
+    /** @param {unknown} _e @param {any} v */
+    const listener = (_e, v) => cb({ visible: Boolean(v?.visible) });
+    ipcRenderer.on("overlay:visibility", listener);
+    return () => ipcRenderer.removeListener("overlay:visibility", listener);
+  },
 });

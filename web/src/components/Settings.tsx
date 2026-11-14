@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Settings as SettingsT, SettingsView } from "../types";
+import { playOverlaySound } from "../overlay/sounds";
 
 const TIMER_LABELS: Record<string, string> = {
   bounty: "Bounty runes",
@@ -274,6 +275,14 @@ export function Settings({ onClose }: { onClose: () => void }) {
           format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => change({ overlay: { opacity: v } })} />
         <Range label="Text size" value={s.overlay.scale} min={0.8} max={1.5} step={0.05} disabled={ro}
           format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => change({ overlay: { scale: v } })} />
+        <Toggle label="Sound when the overlay opens and closes" checked={s.overlay.sound} disabled={ro}
+          onChange={(v) => change({ overlay: { sound: v } })} hint="Arcane: an air sweep into a soft bell. Plays on Ctrl+Shift+H and the tray menu." />
+        <Range label="Sound volume" value={s.overlay.soundVolume} min={0} max={1} step={0.05} disabled={ro || !s.overlay.sound}
+          format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => change({ overlay: { soundVolume: v } })} />
+        <div className="btns-inline">
+          <button type="button" disabled={!s.overlay.sound} onClick={() => playOverlaySound("open", s.overlay.soundVolume)}>▶ Open sound</button>
+          <button type="button" disabled={!s.overlay.sound} onClick={() => playOverlaySound("close", s.overlay.soundVolume)}>▶ Close sound</button>
+        </div>
         <p className="muted small">Changes show up in the overlay right away. Move or resize it with Ctrl+Shift+L.</p>
       </section>
 

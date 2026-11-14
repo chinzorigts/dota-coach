@@ -7,6 +7,8 @@ export interface OverlayMode {
 
 export interface OverlayBridge {
   onMode(cb: (mode: OverlayMode) => void): () => void;
+  /** Optional: an older overlay build may not have it */
+  onVisibility?(cb: (e: { visible: boolean }) => void): () => void;
 }
 
 declare global {

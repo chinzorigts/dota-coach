@@ -269,6 +269,7 @@ html.overlay-root, html.overlay-root body { background: transparent; overflow: h
 .settings button { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 14px; }
 .settings button.primary { background: var(--gold); color: #1d1607; border-color: var(--gold); font-weight: 600; }
 .settings button:disabled { opacity: 0.45; cursor: default; }
+.btns-inline { display: flex; gap: var(--s2); flex-wrap: wrap; }
 .set-ro { margin: 0; padding: var(--s2) var(--s3); background: rgb(224 148 58 / 0.12); border-left: 3px solid var(--warn); border-radius: 4px; font-size: 14px; }
 .set-section { display: flex; flex-direction: column; gap: var(--s4); }
 .set-section h2 { margin: 0; font: 600 22px/1.2 var(--f-num); }

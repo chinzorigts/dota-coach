@@ -152,6 +152,9 @@ function createWindow() {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      // The overlay is click-through, so it never gets the click Chromium wants before playing audio.
+      // Without this the open/close sounds would stay silent.
+      autoplayPolicy: "no-user-gesture-required",
     },
   });
   // "screen-saver" keeps it above borderless-fullscreen games on Windows and macOS
@@ -181,8 +184,12 @@ function createWindow() {
 // ── actions ───────────────────────────────────────────────────────────────────
 function toggleVisible() {
   if (!win) return;
-  if (win.isVisible()) win.hide();
-  else win.showInactive(); // show without stealing focus from the game
+  const showing = !win.isVisible();
+  // Tell the page first so it can play the open/close sound. A hidden window keeps playing audio, so
+  // hiding right away doesn't cut the close sound. Calibration hides/shows the window without this event.
+  win.webContents.send("overlay:visibility", { visible: showing });
+  if (showing) win.showInactive(); // show without stealing focus from the game
+  else win.hide();
   refreshTray();
 }
 

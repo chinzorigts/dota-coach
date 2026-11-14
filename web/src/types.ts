@@ -88,7 +88,7 @@ export interface Settings {
     goldAlert: number;
     timers: Record<string, boolean>;
   };
-  overlay: { sections: Record<string, boolean>; opacity: number; scale: number };
+  overlay: { sections: Record<string, boolean>; opacity: number; scale: number; sound: boolean; soundVolume: number };
   detection: { enabled: boolean };
   matchInfo: { enabled: boolean; logPath: string };
 }

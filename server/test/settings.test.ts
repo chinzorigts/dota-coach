@@ -29,6 +29,12 @@ describe("mergeSettings", () => {
     expect(s.coach.timers.bounty).toBe(true);
     expect(s.overlay.opacity).toBe(0.3);
     expect(s.overlay.scale).toBe(1.25);
+    expect(s.overlay.sound).toBe(true);
+    expect(s.overlay.soundVolume).toBe(0.6);
+    const muted = mergeSettings(s, { overlay: { sound: false, soundVolume: 3 } });
+    expect(muted.overlay.sound).toBe(false);
+    expect(muted.overlay.soundVolume).toBe(1);
+    expect(mergeSettings(s, { overlay: { sound: "yes" } }).overlay.sound).toBe(true);
     expect((s as any).hacker).toBeUndefined();
   });
 });

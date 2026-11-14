@@ -38,6 +38,9 @@ export interface Settings {
     sections: Record<OverlaySection, boolean>;
     opacity: number;
     scale: number;
+    /** Arcane open/close sound when the overlay is toggled */
+    sound: boolean;
+    soundVolume: number;
   };
   detection: { enabled: boolean };
   /** Lobby players from server_log.txt (see matchlog/parser.ts for why this is usually unavailable). "" = auto-detect */
@@ -65,6 +68,8 @@ export function defaultSettings(): Settings {
       sections: Object.fromEntries(OVERLAY_SECTIONS.map((s) => [s, true])) as Record<OverlaySection, boolean>,
       opacity: 0.84,
       scale: 1,
+      sound: true,
+      soundVolume: 0.6,
     },
     detection: { enabled: true },
     matchInfo: { enabled: true, logPath: "" },
@@ -111,6 +116,8 @@ export function mergeSettings(base: Settings, patch: unknown): Settings {
       sections: flags(overlay.sections, OVERLAY_SECTIONS, base.overlay.sections),
       opacity: num(overlay.opacity, base.overlay.opacity, 0.3, 1, 0.01),
       scale: num(overlay.scale, base.overlay.scale, 0.8, 1.5, 0.05),
+      sound: bool(overlay.sound, base.overlay.sound),
+      soundVolume: num(overlay.soundVolume, base.overlay.soundVolume, 0, 1, 0.05),
     },
     detection: { enabled: bool(detection.enabled, base.detection.enabled) },
     matchInfo: {
