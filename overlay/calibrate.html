@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'self'" />
+<title>Calibrate enemy detection</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; cursor: crosshair; font: 15px/1.4 system-ui, sans-serif; }
+  #shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; user-select: none; -webkit-user-drag: none; }
+  .rect { position: absolute; border: 2px solid; pointer-events: none; }
+  .rect.radiant { border-color: #63b05c; background: rgb(99 176 92 / 0.2); }
+  .rect.dire { border-color: #cf4b3e; background: rgb(207 75 62 / 0.2); }
+  .rect i { position: absolute; top: 0; bottom: 0; border-left: 1px dashed rgb(255 255 255 / 0.6); }
+  #panel {
+    position: absolute; left: 50%; bottom: 48px; transform: translateX(-50%);
+    background: rgb(18 24 33 / 0.94); color: #e7e0cc; border: 1px solid #d4a73a; border-radius: 10px;
+    padding: 14px 18px; max-width: 560px; cursor: default; text-align: center;
+  }
+  #panel b { color: #d4a73a; }
+  #panel .buttons { margin-top: 10px; display: flex; gap: 8px; justify-content: center; }
+  button { font: inherit; border-radius: 6px; padding: 5px 14px; border: 1px solid #2c384b; background: #212b3b; color: inherit; cursor: pointer; }
+  button.primary { background: #d4a73a; color: #1d1607; border: 0; font-weight: 600; }
+  button:disabled { opacity: 0.4; cursor: default; }
+</style>
+</head>
+<body>
+<img id="shot" alt="" />
+<div id="panel">
+  <div id="msg">Loading screenshot…</div>
+  <div class="buttons">
+    <button id="redo">Start over</button>
+    <button id="cancel">Cancel (Esc)</button>
+    <button id="save" class="primary" disabled>Save</button>
+  </div>
+</div>
+<script src="calibrate.js"></script>
+</body>
+</html>

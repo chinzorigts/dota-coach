@@ -171,6 +171,9 @@ code { font-size: 0.9em; background: var(--panel-2); padding: 1px 6px; border-ra
 .suggest { position: absolute; bottom: calc(100% + 4px); left: 0; right: 0; list-style: none; margin: 0; padding: 4px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; z-index: 5; }
 .suggest li { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 4px; cursor: pointer; font-size: 14px; }
 .suggest li:hover { background: var(--line); }
+.detect-note { flex-basis: 100%; order: 3; margin: -4px 0 0; font-size: 12px; color: var(--muted); }
+.detect-note.ok { color: var(--radiant); }
+.detect-note.warn { color: var(--warn); }
 .role { display: flex; align-items: center; gap: var(--s1); }
 .role button { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
 .role button.on { border-color: var(--gold); color: var(--gold); }
@@ -224,6 +227,9 @@ html.overlay-root, html.overlay-root body { background: transparent; overflow: h
 .ov-bar span { display: block; height: 100%; background: var(--gold); transition: width 0.4s ease; }
 .ov-star { width: 32px; height: 32px; display: grid; place-items: center; color: var(--gold); font-size: 18px; background: var(--panel-2); border-radius: 4px; flex: none; }
 .ov-alert { margin: 0; padding: 4px 8px; background: rgb(207 75 62 / 0.28); border-left: 3px solid var(--dire); border-radius: 3px; font-weight: 600; }
+.ov-enemies { display: flex; align-items: center; gap: 4px; }
+.ov-enemies img, .ov-enemies .img-fallback { border-radius: 3px; box-shadow: 0 0 0 1px rgb(207 75 62 / 0.6); }
+.ov-enemies small { color: var(--muted); font-size: 11px; margin-left: 4px; }
 .ov-timers { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 12px; }
 .ov-timers b { font: 600 15px var(--f-num); color: var(--text); margin-left: 4px; font-variant-numeric: tabular-nums; }
 .ov-timers .soon b { color: var(--gold); }

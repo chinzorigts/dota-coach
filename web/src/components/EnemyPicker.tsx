@@ -1,10 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
-import type { HeroListItem } from "../types";
+import type { CoachState, HeroListItem } from "../types";
 import { Img } from "./Img";
 import { post } from "../useCoach";
 
-/** GSI doesn't send enemy heroes while playing, so pick them here. The server clears them on a new match. */
-export function EnemyPicker({ enemies, rolePref, role }: { enemies: string[]; rolePref: "auto" | "core" | "support"; role: "core" | "support" }) {
+/** One line saying where the enemy list came from, or what auto-detection is doing */
+function detectionNote(enemies: string[], source: CoachState["enemySource"], d: CoachState["detection"]): { text: string; tone: "ok" | "warn" | "muted" } | null {
+  if (source === "manual") return { text: "Set by you. Remove all to switch back to auto-detect", tone: "muted" };
+  if (source === "gsi") return { text: "From game data", tone: "ok" };
+  if (d.error) return { text: `Auto-detect: ${d.error}`, tone: "warn" };
+  if (d.calibration === "bad") {
+    return { text: "Auto-detect can't find your hero in your team's row. Recalibrate from the overlay's tray menu", tone: "warn" };
+  }
+  const recent = d.lastAt > 0 && Date.now() - d.lastAt < 10_000;
+  if (source === "vision") {
+    return { text: enemies.length === 5 ? "Auto-detected from the top bar" : `Auto-detecting… ${enemies.length}/5`, tone: "ok" };
+  }
+  if (d.wanted && recent) return { text: "Auto-detecting from the top bar…", tone: "muted" };
+  if (d.wanted) return { text: "Type enemies here, or run the overlay (npm run overlay) to auto-detect them", tone: "muted" };
+  return null;
+}
+
+/** GSI doesn't send enemy heroes while playing: they come from screen detection, game data when available, or you. */
+export function EnemyPicker({ enemies, source, detection, rolePref, role }: {
+  enemies: string[];
+  source: CoachState["enemySource"];
+  detection: CoachState["detection"];
+  rolePref: "auto" | "core" | "support";
+  role: "core" | "support";
+}) {
   const [heroes, setHeroes] = useState<HeroListItem[]>([]);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
@@ -21,6 +44,7 @@ export function EnemyPicker({ enemies, rolePref, role }: { enemies: string[]; ro
   }, [q, heroes, enemies]);
 
   const save = (next: string[]) => post("/api/enemies", { heroes: next }).catch(() => undefined);
+  const note = detectionNote(enemies, source, detection);
   const add = (name: string) => {
     if (enemies.length >= 5) return;
     save([...enemies, name]);
@@ -64,6 +88,7 @@ export function EnemyPicker({ enemies, rolePref, role }: { enemies: string[]; ro
           </div>
         )}
       </div>
+      {note && <p className={`detect-note ${note.tone}`} role="status">{note.text}</p>}
       <div className="role" role="radiogroup" aria-label="My role">
         <span className="label">Role</span>
         {(["auto", "core", "support"] as const).map((r) => (

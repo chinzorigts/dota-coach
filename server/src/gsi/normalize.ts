@@ -66,6 +66,8 @@ export interface GameSnapshot {
   } | null;
   hero: HeroState | null;
   abilities: AbilityState[];
+  /** Hero ids per team when GSI exposes them (spectating, or draft data). Empty while playing normally. */
+  lineup: { radiant: number[]; dire: number[] };
   items: {
     inventory: ItemState[];
     backpack: ItemState[];
@@ -73,6 +75,22 @@ export interface GameSnapshot {
     teleport: ItemState | null;
     neutral: ItemState | null;
   };
+}
+
+function lineupFrom(raw: RawGsi): { radiant: number[]; dire: number[] } {
+  const ids = (team: "team2" | "team3") => {
+    const out = new Set<number>();
+    // Spectator: hero.team2.player0.id
+    for (const p of Object.values(raw.hero?.[team] ?? {})) {
+      if (typeof p?.id === "number" && p.id > 0) out.add(p.id);
+    }
+    // Draft: draft.team2.pick0_id
+    for (const [k, v] of Object.entries(raw.draft?.[team] ?? {})) {
+      if (/^pick\d+_id$/.test(k) && typeof v === "number" && v > 0) out.add(v);
+    }
+    return [...out].slice(0, 5);
+  };
+  return { radiant: ids("team2"), dire: ids("team3") };
 }
 
 const n = (v: unknown, d = 0) => (typeof v === "number" && Number.isFinite(v) ? v : d);
@@ -174,6 +192,7 @@ export function normalize(raw: RawGsi, now = Date.now()): GameSnapshot {
         }
       : null,
     hero,
+    lineup: lineupFrom(raw),
     abilities,
     items: {
       inventory: pick("slot", 6),

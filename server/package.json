@@ -15,10 +15,12 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
     "dotaconstants": "^10.8.0",
+    "pngjs": "^7.0.0",
     "ws": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "@types/pngjs": "^6.0.5",
     "@types/ws": "^8.18.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",

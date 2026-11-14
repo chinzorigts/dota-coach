@@ -88,6 +88,17 @@ export interface RawGsi {
     talent_6?: boolean;
     talent_7?: boolean;
     talent_8?: boolean;
+    /** Spectator mode only: every hero, keyed team2/team3 > playerN */
+    team2?: Record<string, { id?: number }>;
+    team3?: Record<string, { id?: number }>;
+  };
+  /**
+   * Picks/bans. Reliably present when spectating or casting; may be absent for a player.
+   * team2 = Radiant, team3 = Dire. Keys like pick0_id .. pick4_id hold hero ids.
+   */
+  draft?: {
+    team2?: Record<string, unknown>;
+    team3?: Record<string, unknown>;
   };
   abilities?: Record<string, RawAbility>;
   items?: Record<string, RawItem>;

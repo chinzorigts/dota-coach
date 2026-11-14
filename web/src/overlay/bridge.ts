@@ -1,6 +1,7 @@
 // Bridge exposed by the Electron preload (overlay/preload.cjs). Undefined in a normal browser.
 export interface OverlayMode {
   locked: boolean;
+  calibrated: boolean;
   hotkeys: { toggle: string; lock: string; ask: string };
 }
 

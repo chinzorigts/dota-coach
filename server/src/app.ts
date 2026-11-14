@@ -7,6 +7,33 @@ import { allHeroes } from "./data/constants.js";
 import type { CoachState } from "./state.js";
 import type { Advisor } from "./ai/advisor.js";
 import type { RawGsi } from "./gsi/types.js";
+import { makeImage, type RGBImage } from "./vision/image.js";
+
+const MAX_SLOT_PX = 128;
+
+/** Validates the overlay's capture payload: { w, h, radiant: base64 RGB[], dire: base64 RGB[] } */
+function parseFrames(body: any): { radiant: RGBImage[]; dire: RGBImage[] } | string {
+  const w = Number(body?.w), h = Number(body?.h);
+  if (!Number.isInteger(w) || !Number.isInteger(h) || w < 8 || h < 8 || w > MAX_SLOT_PX || h > MAX_SLOT_PX) {
+    return `w and h must be integers between 8 and ${MAX_SLOT_PX}`;
+  }
+  const side = (list: unknown): RGBImage[] | string => {
+    if (!Array.isArray(list) || list.length !== 5) return "each side needs exactly 5 slots";
+    const out: RGBImage[] = [];
+    for (const b64 of list) {
+      if (typeof b64 !== "string") return "slots must be base64 strings";
+      const buf = Buffer.from(b64, "base64");
+      if (buf.length !== w * h * 3) return `each slot must be ${w}x${h} RGB (${w * h * 3} bytes)`;
+      out.push(makeImage(w, h, new Uint8Array(buf)));
+    }
+    return out;
+  };
+  const radiant = side(body.radiant);
+  if (typeof radiant === "string") return radiant;
+  const dire = side(body.dire);
+  if (typeof dire === "string") return dire;
+  return { radiant, dire };
+}
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -82,6 +109,18 @@ export function createApp(state: CoachState, advisor: Advisor, gsiToken = config
         if (!Array.isArray(body.heroes)) return json(res, 400, { error: "heroes must be an array" });
         state.setEnemies(body.heroes.map(String));
         return json(res, 200, { enemies: state.enemies });
+      }
+
+      // Overlay asks whether it should keep capturing the top bar
+      if (url.pathname === "/api/vision/status") {
+        return json(res, 200, { wanted: state.visionWanted(), ...state.detection });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/vision/topbar") {
+        const frames = parseFrames(JSON.parse((await readBody(req, 200_000)) || "{}"));
+        if (typeof frames === "string") return json(res, 400, { error: frames });
+        const status = await state.ingestVision(frames);
+        return json(res, 200, { wanted: state.visionWanted(), enemies: state.enemies, ...status });
       }
 
       if (req.method === "POST" && url.pathname === "/api/role") {

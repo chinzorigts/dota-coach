@@ -56,6 +56,14 @@ export interface CoachState {
   heroInfo: { localizedName: string; img: string; icon: string; roles: string[] } | null;
   report: Report | null;
   enemies: string[];
+  enemySource: "none" | "manual" | "gsi" | "vision";
+  detection: {
+    wanted: boolean;
+    calibration: "ok" | "swapped" | "unverified" | "bad" | null;
+    slots: { hero: string | null; score: number; confirmed: string | null }[];
+    lastAt: number;
+    error: string | null;
+  };
   rolePref: "auto" | "core" | "support";
   popularitySource: "opendota" | "default";
   names: { abilities: Record<string, string>; items: Record<string, string> };

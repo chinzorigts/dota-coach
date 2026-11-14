@@ -44,7 +44,7 @@ export default function App() {
               <Timers timers={r.timers} alerts={r.alerts} />
             </section>
           </main>
-          <EnemyPicker enemies={state.enemies} rolePref={state.rolePref} role={r.role} />
+          <EnemyPicker enemies={state.enemies} source={state.enemySource} detection={state.detection} rolePref={state.rolePref} role={r.role} />
         </>
       )}
     </div>

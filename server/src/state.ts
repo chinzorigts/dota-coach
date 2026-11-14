@@ -4,11 +4,30 @@ import { getAbility, getHero, getItem } from "./data/constants.js";
 import { getItemPopularity, type ItemPopularity } from "./data/opendota.js";
 import { buildReport, type CoachReport, type RolePref } from "./engine/index.js";
 import type { Advisor } from "./ai/advisor.js";
+import { EnemyDetector, type DetectionResult, type Side, type SlotResult } from "./vision/detector.js";
+import type { RGBImage } from "./vision/image.js";
+import type { TemplateBank } from "./vision/matcher.js";
+import { getTemplateBank } from "./vision/templates.js";
+
+/** Where the current enemy list came from. Manual always wins; auto sources never overwrite it. */
+export type EnemySource = "none" | "manual" | "gsi" | "vision";
+
+export interface DetectionStatus {
+  calibration: DetectionResult["calibration"] | null;
+  slots: SlotResult[];
+  lastAt: number;
+  error: string | null;
+}
+
+const emptyDetection = (): DetectionStatus => ({ calibration: null, slots: [], lastAt: 0, error: null });
 
 export class CoachState {
   snapshot: GameSnapshot | null = null;
   report: CoachReport | null = null;
   enemies: string[] = [];
+  enemySource: EnemySource = "none";
+  detection: DetectionStatus = emptyDetection();
+  private detector: EnemyDetector | null = null;
   rolePref: RolePref = "auto";
   popularity: ItemPopularity | null = null;
   popularityHero: number | null = null;
@@ -19,6 +38,7 @@ export class CoachState {
   constructor(
     private advisor: Advisor,
     private loadPopularity: (heroId: number) => Promise<ItemPopularity | null> = getItemPopularity,
+    private loadBank: () => Promise<{ bank: TemplateBank }> = getTemplateBank,
   ) {
     advisor.onChange(() => {
       this.recompute(); // AI picks feed the item/skill ranking, so recompute
@@ -43,6 +63,9 @@ export class CoachState {
     if (snap.matchId && snap.matchId !== this.matchId) {
       this.matchId = snap.matchId;
       this.enemies = [];
+      this.enemySource = "none";
+      this.detector?.reset();
+      this.detection = emptyDetection();
       this.advisor.reset();
     }
 
@@ -59,6 +82,7 @@ export class CoachState {
     }
 
     this.snapshot = snap;
+    this.applyGsiLineup(snap);
     this.recompute();
     if (this.snapshot && this.report) {
       void this.advisor.onSnapshot(this.snapshot, this.report, this.enemies);
@@ -66,13 +90,68 @@ export class CoachState {
     this.emit();
   }
 
+  /** From the UI. Clearing the list hands control back to auto-detection. */
   setEnemies(heroes: string[]) {
     const valid = [...new Set(heroes)].filter((h) => getHero(h)).slice(0, 5);
-    const changed = valid.join() !== this.enemies.join();
-    this.enemies = valid;
-    this.recompute();
-    if (changed) void this.advisor.onEnemiesChanged(this.snapshot, this.report, this.enemies);
+    if (valid.length === 0) {
+      this.detector?.reset();
+      this.detection = emptyDetection();
+    }
+    this.updateEnemies(valid, valid.length ? "manual" : "none");
     this.emit();
+  }
+
+  private updateEnemies(heroes: string[], source: EnemySource) {
+    const changed = heroes.join() !== this.enemies.join();
+    this.enemies = heroes;
+    this.enemySource = source;
+    this.recompute();
+    // Auto-detection fills slots one by one; ask the AI once the lineup is complete, not five times
+    const worthAsking = source === "manual" || source === "gsi" || heroes.length === 5;
+    if (changed && worthAsking) void this.advisor.onEnemiesChanged(this.snapshot, this.report, this.enemies);
+  }
+
+  private enemySide(): Side | null {
+    const t = this.snapshot?.team;
+    return t === "radiant" ? "dire" : t === "dire" ? "radiant" : null;
+  }
+
+  /** Spectator / draft data straight from GSI, when the game provides it */
+  private applyGsiLineup(snap: GameSnapshot) {
+    const side = this.enemySide();
+    if (!side || this.enemySource === "manual") return;
+    const names = snap.lineup[side].map((id) => getHero(id)?.name).filter((n): n is string => Boolean(n));
+    if (names.length && names.join() !== this.enemies.join()) this.updateEnemies(names, "gsi");
+  }
+
+  /** Whether the overlay should keep capturing the top bar */
+  visionWanted(): boolean {
+    const s = this.snapshot;
+    return Boolean(
+      s?.hero && s.team && s.inProgress &&
+        this.enemySource !== "manual" && this.enemySource !== "gsi" && this.enemies.length < 5,
+    );
+  }
+
+  /** Top-bar portraits captured by the overlay, 5 per side */
+  async ingestVision(frames: Record<Side, RGBImage[]>): Promise<DetectionStatus> {
+    const s = this.snapshot;
+    if (!this.visionWanted() || !s?.hero || !s.team) return this.detection;
+    try {
+      const { bank } = await this.loadBank();
+      if (bank.size === 0) throw new Error("Hero portraits could not be downloaded (offline?)");
+      this.detector ??= new EnemyDetector(bank);
+      const res = this.detector.update(frames, s.team, s.hero.name);
+      this.detection = { calibration: res.calibration, slots: res.enemySlots, lastAt: Date.now(), error: null };
+      // Only grow the list; a later bad frame never removes a confirmed hero
+      if (this.enemySource !== "manual" && res.enemies.length > this.enemies.length) {
+        this.updateEnemies(res.enemies, "vision");
+      }
+    } catch (err) {
+      this.detection = { ...this.detection, lastAt: Date.now(), error: (err as Error).message };
+    }
+    this.emit();
+    return this.detection;
   }
 
   setRole(role: RolePref) {
@@ -101,6 +180,8 @@ export class CoachState {
       heroInfo: hero ?? null,
       report: this.report,
       enemies: this.enemies,
+      enemySource: this.enemySource,
+      detection: { ...this.detection, wanted: this.visionWanted() },
       rolePref: this.rolePref,
       popularitySource: this.popularity ? "opendota" : "default",
       ai: this.advisor.status(),

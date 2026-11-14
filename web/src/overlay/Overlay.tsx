@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useCoach, post } from "../useCoach";
 import { Img } from "../components/Img";
-import { abilityImg, clock, gold as fmt } from "../format";
+import { abilityImg, clock, gold as fmt, heroIcon } from "../format";
 import { bridge, type OverlayMode } from "./bridge";
 
 /**
@@ -13,6 +13,7 @@ export function Overlay() {
   // In a plain browser (no Electron) treat it as unlocked so the page is usable for previews.
   const [locked, setLocked] = useState(Boolean(bridge()));
   const [hk, setHk] = useState<OverlayMode["hotkeys"] | null>(null);
+  const [calibrated, setCalibrated] = useState(true);
   const [q, setQ] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
@@ -21,6 +22,7 @@ export function Overlay() {
     return bridge()?.onMode((m) => {
       setLocked(m.locked);
       setHk(m.hotkeys);
+      setCalibrated(m.calibrated);
     });
   }, []);
 
@@ -89,6 +91,15 @@ export function Overlay() {
             <p key={a.id} className="ov-alert">{a.text}</p>
           ))}
 
+          {state.enemies.length > 0 && (
+            <div className="ov-enemies" aria-label="Enemy heroes">
+              {state.enemies.map((e) => (
+                <Img key={e} src={heroIcon(e)} label={e.replace("npc_dota_hero_", "")} width={22} height={22} />
+              ))}
+              {state.enemySource === "vision" && state.enemies.length < 5 && <small>detecting…</small>}
+            </div>
+          )}
+
           <div className="ov-timers">
             {r.timers.slice(0, 2).map((t) => (
               <span key={t.id} className={t.inSeconds <= 15 ? "soon" : ""}>
@@ -117,6 +128,9 @@ export function Overlay() {
             </form>
           )}
           {err && <p className="ov-err">{err}</p>}
+          {!locked && !calibrated && state.enemySource !== "manual" && (
+            <p className="ov-keys">Enemy auto-detect is off. Tray menu → Set up enemy detection</p>
+          )}
           {!locked && hk && <p className="ov-keys">{hk.toggle} hide · {hk.ask} quick ask</p>}
         </>
       )}
