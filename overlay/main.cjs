@@ -262,7 +262,7 @@ async function watchdogTick() {
 function applyLock() {
   if (!win) return;
   // Locked: clicks pass through to the game and the window never takes focus away from Dota.
-  win.setIgnoreMouseEvents(locked, { forward: true });
+  win.setIgnoreMouseEvents(locked); // no { forward: true }: see the grab handle note in createWindow
   win.setFocusable(!locked);
   win.setResizable(!locked);
   if (!locked) win.focus();
@@ -296,7 +296,7 @@ function createWindow() {
     // page loads can swallow game clicks for a moment, and showing it normally can pull focus from the game.
     show: false,
   });
-  if (locked) win.setIgnoreMouseEvents(true, { forward: true });
+  if (locked) win.setIgnoreMouseEvents(true);
   win.once("ready-to-show", () => win?.showInactive());
   // "screen-saver" keeps it above borderless-fullscreen games on Windows and macOS
   win.setAlwaysOnTop(true, "screen-saver");
@@ -328,26 +328,26 @@ function createWindow() {
 
   // The grab handle: while the pointer is over it, the locked window takes mouse input so it can be dragged;
   // everywhere else clicks keep passing through to the game. It never takes keyboard focus (focusable stays off).
-  ipcMain.removeAllListeners("overlay:interactive");
-  ipcMain.on("overlay:interactive", (e, on) => {
-    if (!win || e.sender !== win.webContents || !locked) return;
-    win.setIgnoreMouseEvents(!on, { forward: true });
-    clearInterval(gripWatch);
-    if (!on) return;
-    // Safety net: if the page misses the "pointer left" event, go back to click-through as soon as the
-    // pointer is anywhere but the handle's strip, so the overlay can never keep eating game clicks.
-    gripWatch = setInterval(() => {
-      if (!win || !locked) return clearInterval(gripWatch);
-      const p = screen.getCursorScreenPoint();
-      const b = win.getBounds();
-      const overGrip = p.x >= b.x + b.width / 2 - 40 && p.x <= b.x + b.width / 2 + 40 && p.y >= b.y && p.y <= b.y + 24;
-      // Mouse button held = dragging the window; keep it interactive until the drag ends
-      if (!overGrip && !dragging) {
-        win.setIgnoreMouseEvents(true, { forward: true });
-        clearInterval(gripWatch);
-      }
-    }, 250);
-  });
+  //
+  // The pointer is found by asking for its position a few times a second, NOT with
+  // setIgnoreMouseEvents(..., { forward: true }): on Windows that option installs a system-wide low-level
+  // mouse hook in this process, so every mouse movement in every app (the game included) has to wait for
+  // this process to answer. With the overlay at below-normal priority next to a busy game, that made the
+  // mouse stutter and input lag. Plain click-through has no hook and costs the game nothing.
+  ipcMain.removeAllListeners("overlay:interactive"); // older pages may still send it; ignored
+  clearInterval(gripWatch);
+  let gripActive = false;
+  gripWatch = setInterval(() => {
+    if (!win || !locked || !win.isVisible()) return;
+    const p = screen.getCursorScreenPoint();
+    const b = win.getBounds();
+    const overGrip = p.x >= b.x + b.width / 2 - 40 && p.x <= b.x + b.width / 2 + 40 && p.y >= b.y && p.y <= b.y + 24;
+    // While a drag is in progress the window stays interactive even if the pointer outruns it
+    const want = overGrip || dragging;
+    if (want === gripActive) return;
+    gripActive = want;
+    win.setIgnoreMouseEvents(!want);
+  }, 200);
   // will-move fires repeatedly while dragging; treat the drag as over once it stops firing (or the move ends)
   win.on("will-move", () => {
     dragging = true;

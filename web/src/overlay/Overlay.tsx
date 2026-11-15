@@ -121,8 +121,6 @@ export function Overlay() {
           className="ov-grip"
           title="Drag to move (tray menu: Move overlay to…)"
           aria-label="Drag to move the overlay"
-          onMouseEnter={() => bridge()?.setInteractive?.(true)}
-          onMouseLeave={() => bridge()?.setInteractive?.(false)}
         >
           <i aria-hidden />
         </div>
