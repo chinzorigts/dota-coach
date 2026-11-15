@@ -6,13 +6,13 @@ import type { CoachReport } from "../engine/types.js";
 export const ADVICE_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["summary", "danger", "next_items", "skill_priority", "tips", "neutral_item", "neutral_reason"],
+  required: ["summary", "danger", "next_items", "skill_priority", "skill_build", "tips", "neutral_item", "neutral_reason"],
   properties: {
     summary: { type: "string", description: "One or two sentence summary of the current situation" },
     danger: { type: "string", enum: ["low", "medium", "high"] },
     next_items: {
       type: "array",
-      description: "Items to buy next, in order. At most 4",
+      description: "The item plan from here, in buying order, best first. 4 to 6 items",
       items: {
         type: "object",
         additionalProperties: false,
@@ -26,6 +26,11 @@ export const ADVICE_SCHEMA = {
     skill_priority: {
       type: "array",
       description: "Order to max basic abilities (no ultimate). Use only the given ability keys",
+      items: { type: "string" },
+    },
+    skill_build: {
+      type: "array",
+      description: "The ability to take at each of the next 6 skill points, in order (ability keys; repeat a key to level it again)",
       items: { type: "string" },
     },
     tips: {
@@ -44,9 +49,11 @@ export const ADVICE_SCHEMA = {
 export const SYSTEM_PROMPT = `You are a Dota 2 coach. The player reads your advice on a second screen or an in-game overlay while playing.
 
 Rules:
-- Write in English. Keep every sentence short and immediately actionable; long text is not read mid-game.
+- __LANGUAGE__ Keep every sentence short and immediately actionable; long text is not read mid-game.
 - Always name items by their dotaconstants key (e.g. black_king_bar, blink, power_treads).
 - skill_priority uses only keys from the input abilities list, basic abilities only, ultimate excluded, in maxing order.
+- skill_build is the ability to take at each of the next 6 skill points, in order, starting from the current levels. Use keys from the abilities list; include the ultimate at the levels it becomes available; leave talents out (they are handled separately). Decide it from the lane, the hero's role and the enemy lineup (e.g. an escape or a defensive skill earlier against heavy burst or gank heroes), not from a fixed template.
+- next_items is a plan against THIS enemy lineup, not a generic build. When enemies are known, most items should answer something specific: name the enemy hero or ability in the reason (evasion, silence, burst, illusions, healing, invisibility, big ultimates). Skip an item that is popular on the hero but weak into this lineup, and say what replaces it.
 - Do not recommend items the player already owns, or components of items they already built.
 - rule_engine in the input is a stats- and rules-based recommendation. Follow it when you agree; when the enemy lineup or the situation calls for something better, change it and say why.
 - If the enemy list is empty, do not assume an enemy lineup; advise from the player's hero and situation.
@@ -61,6 +68,16 @@ const mmss = (sec: number) => {
   const a = Math.abs(Math.floor(sec));
   return `${sign}${Math.floor(a / 60)}:${String(a % 60).padStart(2, "0")}`;
 };
+
+/** The coaching rules with the answer language set. Item and ability keys are always the data keys. */
+export function systemPrompt(lang: "ko" | "en" = "en"): string {
+  return SYSTEM_PROMPT.replace(
+    "__LANGUAGE__",
+    lang === "ko"
+      ? "Write summary, tips and every reason in natural Korean (한국어), as a Korean Dota player would say it; keep hero, item and ability names in English."
+      : "Write in English.",
+  );
+}
 
 export function buildUserPayload(
   s: GameSnapshot,

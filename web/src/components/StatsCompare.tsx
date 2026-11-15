@@ -83,14 +83,14 @@ export function StatsCompare({ b }: { b: BenchmarkView }) {
 }
 
 /** Overlay: one short line per stat that has a verdict, worst first, so a glance shows what to fix */
-export function StatsCompareCompact({ b }: { b: BenchmarkView }) {
+export function StatsCompareCompact({ b, label = "Pace" }: { b: BenchmarkView; label?: string }) {
   const order = { bad: 0, ok: 1, good: 2 } as const;
   const rows = b.rows.filter((r) => r.verdict).sort((x, y) => order[x.verdict!] - order[y.verdict!]).slice(0, 4);
   if (!rows.length) return null;
   const SHORT: Record<string, string> = { kills: "K", deaths: "D", assists: "A", lastHits: "LH", denies: "DN", gpm: "GPM", xpm: "XPM" };
   return (
     <section className="ov-sec" aria-label="You versus the average player at this minute">
-      <span className="ov-label">Pace</span>
+      <span className="ov-label">{label}</span>
       <div className="ov-sec-body ov-cmp">
         {rows.map((r) => {
           const ref = r.personal ?? r.heroMedian;

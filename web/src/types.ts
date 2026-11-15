@@ -79,6 +79,8 @@ export interface CoachState {
   purchases: Purchase[];
   rank: RankView;
   recentGames: RecentGames | null;
+  review: Review | null;
+  reviewStatus: "idle" | "pending" | "failed";
   draft: DraftView | null;
   match: MatchInfo | null;
   matchLog: { path: string | null; exists: boolean; lastLobbyAt: number | null; error: string | null } | null;
@@ -91,6 +93,7 @@ export interface CoachState {
 }
 
 export interface Settings {
+  language: "ko" | "en";
   ai: {
     enabled: boolean;
     model: string;
@@ -105,11 +108,24 @@ export interface Settings {
     goldAlert: number;
     timers: Record<string, boolean>;
   };
-  overlay: { sections: Record<string, boolean>; opacity: number; scale: number; sound: boolean; soundVolume: number };
+  overlay: { sections: Record<string, boolean>; opacity: number; scale: number; sound: boolean; soundVolume: number; voice: boolean };
   detection: { enabled: boolean };
   matchInfo: { enabled: boolean; logPath: string };
   rank: { mmr: number | null; autoAdjust: boolean; perGame: number };
   draft: { position: Position };
+}
+
+// Keep in sync with server/src/ai/review.ts
+export interface Review {
+  matchId: string;
+  hero: string;
+  won: boolean;
+  durationSec: number;
+  kda: string;
+  summary: string;
+  good: string[];
+  improve: string[];
+  at: number;
 }
 
 // Keep in sync with CoachState.recentGames() in server/src/state.ts

@@ -4,6 +4,7 @@ import type { Alert, ItemRec } from "./types.js";
 export interface AlertPrefs {
   lowHpPct: number;
   goldAlert: number;
+  lang?: "ko" | "en";
 }
 const DEFAULT_PREFS: AlertPrefs = { lowHpPct: 25, goldAlert: 2000 };
 
@@ -12,16 +13,17 @@ export function buildAlerts(s: GameSnapshot, unspent: number, items: ItemRec[], 
   const h = s.hero;
   const p = s.player;
   if (!h || !p) return out;
+  const ko = prefs.lang === "ko";
 
   // HP 0% with alive=true is the frame where the hero just died and GSI hasn't flipped `alive` yet: no HP alert
   if (h.alive && h.healthPct > 0 && h.healthPct <= prefs.lowHpPct) {
-    out.push({ id: "low-hp", level: "danger", text: `HP ${h.healthPct}%. Back off or heal` });
+    out.push({ id: "low-hp", level: "danger", text: ko ? `체력 ${h.healthPct}%. 물러나거나 회복하세요` : `HP ${h.healthPct}%. Back off or heal` });
   } else if (h.alive && h.healthPct > 0 && h.healthPct <= prefs.lowHpPct + 20) {
-    out.push({ id: "mid-hp", level: "warn", text: `HP ${h.healthPct}%. Avoid risky fights` });
+    out.push({ id: "mid-hp", level: "warn", text: ko ? `체력 ${h.healthPct}%. 위험한 싸움은 피하세요` : `HP ${h.healthPct}%. Avoid risky fights` });
   }
 
   if (h.alive && h.maxMana > 0 && h.manaPct <= 15) {
-    out.push({ id: "low-mana", level: "warn", text: `Mana ${h.manaPct}%. Almost out of spells` });
+    out.push({ id: "low-mana", level: "warn", text: ko ? `마나 ${h.manaPct}%. 스킬을 거의 못 써요` : `Mana ${h.manaPct}%. Almost out of spells` });
   }
 
   if (!h.alive) {
@@ -29,12 +31,14 @@ export function buildAlerts(s: GameSnapshot, unspent: number, items: ItemRec[], 
     out.push({
       id: "dead",
       level: "info",
-      text: `Respawn in ${h.respawnSeconds}s${canBuyback ? `. Buyback available (${h.buybackCost} gold)` : ""}`,
+      text: ko
+        ? `${h.respawnSeconds}초 후 부활${canBuyback ? `. 바이백 가능 (${h.buybackCost} 골드)` : ""}`
+        : `Respawn in ${h.respawnSeconds}s${canBuyback ? `. Buyback available (${h.buybackCost} gold)` : ""}`,
     });
   }
 
   if (unspent > 0) {
-    out.push({ id: "unspent", level: "warn", text: `${unspent} unspent ability point${unspent > 1 ? "s" : ""}` });
+    out.push({ id: "unspent", level: "warn", text: ko ? `안 찍은 스킬 포인트 ${unspent}개` : `${unspent} unspent ability point${unspent > 1 ? "s" : ""}` });
   }
 
   const affordable = items.filter((i) => i.affordable && i.key !== "tpscroll");
@@ -42,7 +46,7 @@ export function buildAlerts(s: GameSnapshot, unspent: number, items: ItemRec[], 
     out.push({
       id: "gold",
       level: "info",
-      text: `${p.gold} gold. You can buy ${affordable[0].name} now`,
+      text: ko ? `${p.gold} 골드. ${affordable[0].name} 구매 가능` : `${p.gold} gold. You can buy ${affordable[0].name} now`,
     });
   }
 
@@ -53,17 +57,17 @@ export function buildAlerts(s: GameSnapshot, unspent: number, items: ItemRec[], 
       out.push({
         id: "buyback-reserve",
         level: "warn",
-        text: `Buying ${next.name} leaves you short of buyback (${h.buybackCost})`,
+        text: ko ? `${next.name}을(를) 사면 바이백 골드(${h.buybackCost})가 모자라요` : `Buying ${next.name} leaves you short of buyback (${h.buybackCost})`,
       });
     }
   }
 
   if (!s.items.teleport && s.clockTime > 0) {
-    out.push({ id: "no-tp", level: "warn", text: "No TP scroll" });
+    out.push({ id: "no-tp", level: "warn", text: ko ? "TP 스크롤 없음" : "No TP scroll" });
   }
 
   if (h.disabled.length) {
-    out.push({ id: "disabled", level: "danger", text: `Disabled: ${h.disabled.join(", ")}` });
+    out.push({ id: "disabled", level: "danger", text: ko ? `행동 불가: ${h.disabled.join(", ")}` : `Disabled: ${h.disabled.join(", ")}` });
   }
 
   return out;

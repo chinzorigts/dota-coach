@@ -15,6 +15,7 @@ import { RankCard } from "./components/RankCard";
 import { DraftPanel } from "./components/DraftPanel";
 import { NeutralCard } from "./components/NeutralCard";
 import { RecentGames } from "./components/RecentGames";
+import { ReviewCard } from "./components/ReviewCard";
 
 /** #settings opens the settings screen; plain hash routing keeps it linkable from the server log */
 function useHashRoute() {
@@ -54,6 +55,9 @@ export default function App() {
           <Waiting connected={connected} hasGsi={gsiAge < 75} gameState={s?.gameState} />
           {state && (
             <main className="grid pregame">
+              {(state.review || state.reviewStatus !== "idle") && (
+                <section className="col" style={{ gridColumn: "1 / -1" }}><ReviewCard review={state.review} status={state.reviewStatus} lang={state.settings.language} /></section>
+              )}
               {state.draft && <section className="col"><DraftPanel draft={state.draft} /></section>}
               <section className="col"><RankCard rank={state.rank} />{state.recentGames && <RecentGames data={state.recentGames} />}</section>
             </main>

@@ -25,6 +25,17 @@ function levelableAbilities(s: GameSnapshot) {
   return strict.filter((a) => !a.ultimate).length >= 3 ? strict : mine;
 }
 
+/** Skill points put into abilities so far (talents and attributes excluded) */
+export function spentOnAbilities(s: GameSnapshot): number {
+  return levelableAbilities(s).reduce((sum, a) => sum + a.level, 0);
+}
+
+/** The AI's ability-per-skill-point plan, counted from `base` points spent when it was made */
+export interface AiSkillBuild {
+  build: string[];
+  base: number;
+}
+
 /** Approximate: abilities granted at level 1 by Shard/Scepter can make this undercount */
 export function unspentPoints(s: GameSnapshot): number {
   if (!s.hero) return 0;
@@ -48,7 +59,7 @@ export function defaultPriority(s: GameSnapshot): string[] {
  * The pick at your next level-up: the same rules run one level ahead. Skips levels that grant no point.
  * Null when a point is already waiting (that one is `next`) or there's nothing left to level.
  */
-export function upcomingSkill(s: GameSnapshot, aiPriority: string[] | null): (SkillRec & { atLevel: number }) | null {
+export function upcomingSkill(s: GameSnapshot, aiPriority: string[] | null, aiBuild: AiSkillBuild | null = null): (SkillRec & { atLevel: number }) | null {
   const hero = s.hero;
   if (!hero || unspentPoints(s) > 0) return null;
   // Look ahead to the first level that has a real pick. Levels in between may only offer attributes
@@ -58,7 +69,7 @@ export function upcomingSkill(s: GameSnapshot, aiPriority: string[] | null): (Sk
   for (let level = hero.level + 1; level <= 30; level++) {
     if (NO_POINT_LEVELS.has(level)) continue;
     const p = priorityFor(s, aiPriority);
-    const next = choosePick({ ...s, hero: { ...hero, level } }, p.priority, p.prioritySource);
+    const next = choosePick({ ...s, hero: { ...hero, level } }, p.priority, p.prioritySource, aiBuild);
     if (next) return { ...next, atLevel: level };
   }
   return null;
@@ -74,17 +85,18 @@ function priorityFor(s: GameSnapshot, aiPriority: string[] | null) {
 }
 
 /** The pick at the hero's current level, by ultimate > talent > basic priority, ignoring how many points are free */
-function choosePick(s: GameSnapshot, priority: string[], source: "ai" | "default"): SkillRec | null {
-  return recommendSkillAt(s, priority, source).next;
+function choosePick(s: GameSnapshot, priority: string[], source: "ai" | "default", aiBuild: AiSkillBuild | null = null): SkillRec | null {
+  return recommendSkillAt(s, priority, source, aiBuild).next;
 }
 
 export function recommendSkill(
   s: GameSnapshot,
   aiPriority: string[] | null,
+  aiBuild: AiSkillBuild | null = null,
 ): { unspent: number; next: SkillRec | null; priority: string[]; prioritySource: "ai" | "default" } {
   let unspent = unspentPoints(s);
   const { priority, prioritySource } = priorityFor(s, aiPriority);
-  let next = s.hero && unspent > 0 ? recommendSkillAt(s, priority, prioritySource).next : null;
+  let next = s.hero && unspent > 0 ? recommendSkillAt(s, priority, prioritySource, aiBuild).next : null;
   if (s.hero && unspent === 0) {
     // GSI sometimes reports more spent levels than points earned (innates and such), which would hide a real
     // free point. A talent tier you've reached but not taken, or an ultimate below its cap, can only mean a
@@ -100,7 +112,12 @@ export function recommendSkill(
 }
 
 /** What to level at the hero's current level, given a priority. Doesn't check whether a point is free. */
-function recommendSkillAt(s: GameSnapshot, priority: string[], prioritySource: "ai" | "default"): { next: SkillRec | null } {
+function recommendSkillAt(
+  s: GameSnapshot,
+  priority: string[],
+  prioritySource: "ai" | "default",
+  aiBuild: AiSkillBuild | null = null,
+): { next: SkillRec | null } {
   const hero = s.hero;
   if (!hero) return { next: null };
 
@@ -112,6 +129,17 @@ function recommendSkillAt(s: GameSnapshot, priority: string[], prioritySource: "
     return {
       next: { kind: "ability", key: ult.name, name: getAbility(ult.name).name, reason: `Ultimate level ${ult.level + 1}: always take it when available` },
     };
+  }
+
+  // 1b) The AI's plan for this skill point, when it's a legal pick right now. It was made for this lane and
+  // this enemy lineup, so it goes before the generic order (and before a talent: the plan leaves talents to
+  // the levels where the basics are capped).
+  if (aiBuild) {
+    const key = aiBuild.build[spentOnAbilities(s) - aiBuild.base];
+    const a = key ? abilities.find((x) => x.name === key) : undefined;
+    if (a && !a.ultimate && a.level < Math.min(4, basicCap(hero.level))) {
+      return { next: { kind: "ability", key: a.name, name: getAbility(a.name).name, reason: `AI build for this game, to level ${a.level + 1}` } };
+    }
   }
 
   // 2) Talents

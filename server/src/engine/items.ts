@@ -66,10 +66,13 @@ export function recommendItems(s: GameSnapshot, ctx: ItemContext): ItemRec[] {
   const skipped = new Set(ctx.skipped ?? []);
   // One pair of upgraded boots is enough: once you have any, the others stop being suggested
   const hasBoots = owned.some(isBootsUpgrade);
-  const add = (key: string, reason: string, source: ItemRec["source"], priority: number) => {
+  const aiBoots = ctx.aiItems.find((a) => isBootsUpgrade(a.item))?.item;
+  const add =(key: string, reason: string, source: ItemRec["source"], priority: number) => {
     const it = getItem(key);
     if (!it) return;
     if (source !== "rule" && (skipped.has(key) || (hasBoots && isBootsUpgrade(key)))) return;
+    // The AI chose a boots upgrade for this game: don't list a different one next to it
+    if (source !== "ai" && aiBoots && isBootsUpgrade(key) && key !== aiBoots) return;
     const existing = recs.get(key);
     if (existing) {
       // When several sources agree, bump priority and join the reasons
@@ -128,8 +131,17 @@ export function recommendItems(s: GameSnapshot, ctx: ItemContext): ItemRec[] {
     meta = DEFAULT_BUILDS[ctx.role === "support" ? "support" : (hero?.primaryAttr ?? "all")];
     metaLabel = "Default build";
   }
+  // With the enemy lineup known and an AI plan in hand, generic "popular" items would only water the list
+  // down: keep just the ones already under way. Loose starting parts (Gauntlets, Circlet) are for the first
+  // minutes only.
+  const lineupPlan = ctx.enemies.length > 0 && ctx.aiItems.length >= 3;
   meta
     .filter((k) => !NOISE.has(k) && !hasEffectively(k, owned) && !getItem(k)?.consumable)
+    .filter((k) => {
+      const it = getItem(k)!;
+      if (phase !== "pre" && it.cost < 500 && it.components.length === 0) return false;
+      return !lineupPlan || remainingCost(k, owned) < it.cost;
+    })
     .slice(0, 4)
     .forEach((key, i) => add(key, metaLabel, "meta", 50 - i * 4));
 
@@ -147,6 +159,9 @@ export function recommendItems(s: GameSnapshot, ctx: ItemContext): ItemRec[] {
   for (const part of new Set(owned)) {
     const it = getItem(part);
     if (!it || NOISE.has(part) || it.consumable || part === "boots" || isBootsUpgrade(part)) continue;
+    // Only basic shop items count as parts. A finished item (Magic Wand) that happens to go into something
+    // bigger (Holy Locket) isn't a reason to suggest that.
+    if (it.components.length > 0) continue;
     const builds = itemsBuiltFrom(part).filter((k) => !NOISE.has(k) && !hasEffectively(k, owned) && getItem(k));
     if (!builds.length) continue; // a finished item, not a part
     if (usedBy(part, owned) || usedBy(part, recs.keys())) continue;

@@ -292,6 +292,18 @@ export function Settings({ onClose }: { onClose: () => void }) {
           format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => change({ overlay: { opacity: v } })} />
         <Range label="Text size" value={s.overlay.scale} min={0.8} max={1.5} step={0.05} disabled={ro}
           format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => change({ overlay: { scale: v } })} />
+        <div className="set-range">
+          <label htmlFor="language">Language</label>
+          <select id="language" disabled={ro} value={s.language}
+            onChange={(e) => change({ language: e.target.value as SettingsT["language"] })}>
+            <option value="ko">한국어</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+        <p className="muted small">Overlay text, alerts, timers, spoken alerts and AI advice. Hero and item names stay in English.</p>
+        <Toggle label="Spoken alerts" checked={s.overlay.voice} disabled={ro}
+          onChange={(v) => change({ overlay: { voice: v } })}
+          hint="Runes 15s out, low health, item affordable, skill point, and each new AI summary. Uses the sound volume below. Korean needs the Windows Korean speech voice; without it alerts are read in English." />
         <Toggle label="Sound when the overlay opens and closes" checked={s.overlay.sound} disabled={ro}
           onChange={(v) => change({ overlay: { sound: v } })} hint="Arcane: an air sweep into a soft bell. Plays on Ctrl+Shift+H and the tray menu." />
         <Range label="Sound volume" value={s.overlay.soundVolume} min={0} max={1} step={0.05} disabled={ro || !s.overlay.sound}

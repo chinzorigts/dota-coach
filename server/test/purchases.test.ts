@@ -131,3 +131,34 @@ describe("purchase detection", () => {
     expect(state.purchases.filter((p) => p.item === "bfury")).toHaveLength(1);
   });
 });
+
+describe("lineup-specific recommendations", () => {
+  it("doesn't suggest Holy Locket just because Magic Wand is owned", () => {
+    const s = normalize(rawGame({ items: ["magic_wand", "power_treads"] }));
+    const recs = recommendItems(s, { role: "core", popularity: { start: [], early: ["blink"], mid: [], late: [] }, enemies: [], aiItems: [] });
+    expect(recs.map((r) => r.key)).not.toContain("holy_locket");
+  });
+
+  it("drops generic popular items once the AI has a plan against a known lineup", () => {
+    const s = normalize(rawGame({ items: ["power_treads"] }));
+    const popularity = { start: [], early: ["maelstrom", "yasha"], mid: ["butterfly"], late: [] };
+    const ai = [{ item: "black_king_bar", reason: "" }, { item: "monkey_king_bar", reason: "" }, { item: "basher", reason: "" }];
+    const withPlan = recommendItems(s, { role: "core", popularity, enemies: ["npc_dota_hero_windrunner"], aiItems: ai }).map((r) => r.key);
+    expect(withPlan).toEqual(expect.arrayContaining(["black_king_bar", "monkey_king_bar", "basher"]));
+    expect(withPlan).not.toContain("maelstrom");
+    // No lineup yet: the popular build still fills the list
+    expect(recommendItems(s, { role: "core", popularity, enemies: [], aiItems: ai }).map((r) => r.key)).toContain("maelstrom");
+  });
+
+  it("follows the AI's skill build point by point, then falls back to the order", async () => {
+    const { recommendSkill } = await import("../src/engine/skills.js");
+    // Level 4, three points spent (1/1/1), one free. Plan made at base 3: Healing Ward first, then Blade Fury
+    const s = normalize(rawGame({ level: 4, abilityLevels: [1, 1, 1, 0] }));
+    const build = { build: ["juggernaut_healing_ward", "juggernaut_blade_fury"], base: 3 };
+    expect(recommendSkill(s, null, build).next?.key).toBe("juggernaut_healing_ward");
+    expect(recommendSkill(s, null).next?.key).toBe("juggernaut_blade_fury"); // default order
+    // An entry that isn't legal (already at the level cap) is skipped in favour of the normal order
+    const capped = normalize(rawGame({ level: 4, abilityLevels: [1, 2, 0, 0] }));
+    expect(recommendSkill(capped, null, { build: ["juggernaut_healing_ward"], base: 3 }).next?.key).not.toBe("juggernaut_healing_ward");
+  });
+});

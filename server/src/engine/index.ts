@@ -12,7 +12,7 @@ export interface EngineContext {
   rolePref: RolePref;
   popularity: ItemPopularity | null;
   enemies: string[];
-  ai: { items: { item: string; reason: string }[]; skillPriority: string[]; neutral?: { item: string; reason: string } | null } | null;
+  ai: { items: { item: string; reason: string }[]; skillPriority: string[]; skillBuild?: { build: string[]; base: number } | null; neutral?: { item: string; reason: string } | null } | null;
   /** Recommendations replaced by a different purchase this match */
   skipped?: string[];
   /** Items on the courier right now (seen moments ago, not in GSI this update) */
@@ -31,7 +31,8 @@ export function buildReport(s: GameSnapshot, ctx: EngineContext): CoachReport {
     skipped: ctx.skipped,
     inTransit: ctx.inTransit,
   });
-  const skills = { ...recommendSkill(s, ctx.ai?.skillPriority ?? null), upcoming: upcomingSkill(s, ctx.ai?.skillPriority ?? null) };
+  const build = ctx.ai?.skillBuild ?? null;
+  const skills = { ...recommendSkill(s, ctx.ai?.skillPriority ?? null, build), upcoming: upcomingSkill(s, ctx.ai?.skillPriority ?? null, build) };
   const p = s.player;
   const minutes = Math.max(s.clockTime / 60, 1 / 60);
   const itemValue = ownedItems(s).reduce(
@@ -51,7 +52,7 @@ export function buildReport(s: GameSnapshot, ctx: EngineContext): CoachReport {
     items,
     skills,
     alerts: buildAlerts(s, skills.unspent, items, ctx.prefs),
-    timers: buildTimers(s, ctx.prefs?.timers),
+    timers: buildTimers(s, ctx.prefs?.timers, ctx.prefs?.lang),
     neutral: buildNeutral(s, ctx.ai?.neutral),
   };
 }

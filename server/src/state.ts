@@ -21,6 +21,7 @@ import { compareStats } from "./engine/benchmarks.js";
 import { bandForMmr, gameResultDelta, rankView, type RankView } from "./engine/rank.js";
 import { suggestPicks, type DraftView } from "./engine/draft.js";
 import { classifyPurchase, newItems, type Purchase } from "./engine/purchases.js";
+import { callReview, type Review, type ReviewCaller } from "./ai/review.js";
 import { ownedItems } from "./engine/items.js";
 
 /**
@@ -138,6 +139,12 @@ export class CoachState {
   /** When each item was last in the bag/stash; for items riding the courier (GSI can't see the courier) */
   private lastSeenAt = new Map<string, number>();
   private inTransit: string[] = [];
+  /** Post-game debrief of the last finished match. Kept until the next one is reviewed. */
+  review: Review | null = null;
+  reviewStatus: "idle" | "pending" | "failed" = "idle";
+  /** Replaceable in tests */
+  reviewCaller: ReviewCaller = callReview;
+  private reviewedMatch: string | null = null;
   /** Your last 5 matches (OpenDota). Replaceable in tests. */
   loadRecent: (accountId: number, fresh?: boolean) => Promise<RecentMatch[] | null> = getRecentMatches;
   private recent: { accountId: number; data: RecentMatch[] | null | "loading" } | null = null;
@@ -158,6 +165,11 @@ export class CoachState {
     private loadTotals: (accountId: number, heroId: number) => Promise<PlayerHeroTotals | null> = getPlayerHeroTotals,
   ) {
     this.rolePref = settings.get().coach.defaultRole;
+    const saved = settings.loadData("review.json") as Review | null;
+    if (saved && typeof saved.summary === "string" && Array.isArray(saved.good) && Array.isArray(saved.improve)) {
+      this.review = saved;
+      this.reviewedMatch = saved.matchId;
+    }
     let lastDefaultRole = this.rolePref;
     settings.onChange(() => {
       // A new default role applies right away; the footer buttons still override it for this session
@@ -218,6 +230,7 @@ export class CoachState {
     this.loadMe(snap);
     this.applyGameResult(snap);
     const bought = this.detectPurchases(snap);
+    this.maybeReview(snap);
     this.snapshot = snap;
     this.applyGsiLineup(snap);
     this.recompute();
@@ -341,6 +354,55 @@ export class CoachState {
     }
     if (out.length) this.purchases = [...this.purchases, ...out].slice(-20);
     return out;
+  }
+
+  /**
+   * The game just ended (GSI reports a winner): ask for the debrief once. Uses the state as it stood on the
+   * last in-game update, which is still in place at this point (the new snapshot is applied right after).
+   */
+  private maybeReview(snap: GameSnapshot) {
+    if (!snap.winTeam || !snap.matchId || !snap.hero || !snap.team || !snap.player) return;
+    if (this.reviewedMatch === snap.matchId) return;
+    this.reviewedMatch = snap.matchId;
+    const ai = this.settings.get().ai;
+    if (!ai.enabled || !this.settings.hasCredentials()) return;
+    const hero = getHero(snap.hero.name);
+    const p = snap.player;
+    const won = snap.winTeam === snap.team;
+    const bench = compareStats(snap, this.bench?.heroId === snap.hero.id ? this.bench.data : null, this.totals?.data ?? null);
+    const owned = ownedItems(snap);
+    const payload = {
+      hero: hero?.localizedName ?? snap.hero.name,
+      role: this.report?.role,
+      result: won ? "win" : "loss",
+      duration: Math.round(snap.clockTime / 60) + " min",
+      score: snap.score,
+      level: snap.hero.level,
+      kda: p.kills + "/" + p.deaths + "/" + p.assists,
+      last_hits: p.lastHits,
+      denies: p.denies,
+      gpm: p.gpm,
+      xpm: p.xpm,
+      kill_participation_pct: bench?.killParticipation ?? null,
+      vs_average: (bench?.rows ?? []).map((r) => ({ stat: r.label, you: r.value, hero_average: r.heroMedian, your_average: r.personal, verdict: r.verdict })),
+      final_items: owned.map((k) => getItem(k)?.name ?? k),
+      purchases: this.purchases.map((x) => ({ item: x.name, at: Math.floor(x.clock / 60) + ":" + String(Math.floor(x.clock % 60)).padStart(2, "0"), followed_recommendation: x.followed })),
+      enemies: this.enemies.map((k) => getHero(k)?.localizedName ?? k),
+    };
+    const base = { matchId: snap.matchId, hero: payload.hero, won, durationSec: Math.round(snap.clockTime), kda: payload.kda };
+    this.reviewStatus = "pending";
+    this.reviewCaller(payload, { model: ai.model, apiKey: this.settings.resolvedKey(), language: this.settings.get().language })
+      .then((text) => {
+        this.review = { ...base, ...text, at: Date.now() };
+        this.reviewStatus = "idle";
+        this.settings.saveData("review.json", this.review);
+        console.log("[review] match " + base.matchId + " reviewed");
+      })
+      .catch((err) => {
+        this.reviewStatus = "failed";
+        console.warn("[review] failed:", (err as Error).message);
+      })
+      .finally(() => this.emit());
   }
 
   /** Fetch the reference numbers once per hero (and once per account+hero); both are cached on disk too */
@@ -733,12 +795,12 @@ export class CoachState {
       rolePref: this.rolePref,
       popularity: this.popularity,
       enemies: this.enemies,
-      ai: advice ? { items: advice.next_items, skillPriority: advice.skill_priority, neutral: advice.neutral } : null,
+      ai: advice ? { items: advice.next_items, skillPriority: advice.skill_priority, skillBuild: advice.skill_build?.length ? { build: advice.skill_build, base: advice.skill_base ?? 0 } : null, neutral: advice.neutral } : null,
       skipped: [...this.skipped],
       inTransit: this.inTransit,
       prefs: (() => {
         const c = this.settings.get().coach;
-        return { lowHpPct: c.lowHpPct, goldAlert: c.goldAlert, timers: c.timers };
+        return { lowHpPct: c.lowHpPct, goldAlert: c.goldAlert, timers: c.timers, lang: this.settings.get().language };
       })(),
     });
   }
@@ -755,6 +817,8 @@ export class CoachState {
       purchases: this.purchases,
       rank: this.rank(),
       recentGames: this.recentGames(),
+      review: this.review,
+      reviewStatus: this.reviewStatus,
       draft: this.draft(),
       enemies: this.enemies,
       enemySource: this.enemySource,

@@ -23,7 +23,12 @@ export type Effort = (typeof EFFORTS)[number];
 export type TimerId = (typeof TIMER_IDS)[number];
 export type OverlaySection = (typeof OVERLAY_SECTIONS)[number];
 
+export const LANGUAGES = ["ko", "en"] as const;
+export type Language = (typeof LANGUAGES)[number];
+
 export interface Settings {
+  /** Language of the overlay, alerts, timers, spoken alerts and AI advice. Hero/item names stay as in the game data. */
+  language: Language;
   ai: {
     enabled: boolean;
     /** For questions you type */
@@ -47,6 +52,8 @@ export interface Settings {
     /** Arcane open/close sound when the overlay is toggled */
     sound: boolean;
     soundVolume: number;
+    /** Spoken alerts (runes, low HP, item affordable, skill point, AI summary), at soundVolume */
+    voice: boolean;
   };
   detection: { enabled: boolean };
   /** Lobby players from server_log.txt (see matchlog/parser.ts for why this is usually unavailable). "" = auto-detect */
@@ -64,6 +71,7 @@ export function defaultSettings(): Settings {
   const model = MODELS.some((m) => m.id === config.model) ? config.model : MODELS[0].id;
   const effort = (EFFORTS as readonly string[]).includes(config.effort) ? (config.effort as Effort) : "low";
   return {
+    language: "ko",
     ai: {
       enabled: process.env.COACH_AI !== "off",
       model,
@@ -85,6 +93,7 @@ export function defaultSettings(): Settings {
       scale: 1,
       sound: true,
       soundVolume: 0.6,
+      voice: true,
     },
     detection: { enabled: true },
     matchInfo: { enabled: true, logPath: "" },
@@ -118,6 +127,7 @@ export function mergeSettings(base: Settings, patch: unknown): Settings {
   const rank = isObj(p.rank) ? p.rank : {};
   const draft = isObj(p.draft) ? p.draft : {};
   return {
+    language: oneOf(p.language, LANGUAGES, base.language ?? "ko"),
     ai: {
       enabled: bool(ai.enabled, base.ai.enabled),
       model: oneOf(ai.model, MODELS.map((m) => m.id), base.ai.model as (typeof MODELS)[number]["id"]),
@@ -138,6 +148,7 @@ export function mergeSettings(base: Settings, patch: unknown): Settings {
       scale: num(overlay.scale, base.overlay.scale, 0.8, 1.5, 0.05),
       sound: bool(overlay.sound, base.overlay.sound),
       soundVolume: num(overlay.soundVolume, base.overlay.soundVolume, 0, 1, 0.05),
+      voice: bool(overlay.voice, base.overlay.voice ?? true),
     },
     detection: { enabled: bool(detection.enabled, base.detection.enabled) },
     matchInfo: {

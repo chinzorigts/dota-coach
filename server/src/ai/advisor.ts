@@ -1,15 +1,19 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { GameSnapshot } from "../gsi/normalize.js";
 import { getItem, neutralTierOf } from "../data/constants.js";
+import { spentOnAbilities } from "../engine/skills.js";
 import { neutralTier } from "../engine/neutral.js";
 import type { CoachReport } from "../engine/types.js";
-import { ADVICE_SCHEMA, SYSTEM_PROMPT, buildUserPayload } from "./prompt.js";
+import { ADVICE_SCHEMA, buildUserPayload, systemPrompt } from "./prompt.js";
 
 export interface AiAdvice {
   summary: string;
   danger: "low" | "medium" | "high";
   next_items: { item: string; reason: string }[];
   skill_priority: string[];
+  /** Ability per upcoming skill point, counted from skill_base (points spent on abilities when it was asked) */
+  skill_build?: string[];
+  skill_base?: number;
   tips: string[];
   /** Neutral item pick from the current tier's list */
   neutral?: { item: string; reason: string } | null;
@@ -109,10 +113,12 @@ function clientFor(apiKey: string | null) {
 }
 
 /** `cfg` gets the trigger, so automatic in-game calls can use a faster model than questions you type */
-export function makeClaudeCaller(cfg: (reason?: TriggerReason) => { model: string; effort: EffortLevel; apiKey: string | null }): AdviceCaller {
+export function makeClaudeCaller(
+  cfg: (reason?: TriggerReason) => { model: string; effort: EffortLevel; apiKey: string | null; language?: "ko" | "en" },
+): AdviceCaller {
   let cached: { key: string | null; client: Anthropic } | null = null;
   return async (payload, reason) => {
-    const { model, effort, apiKey } = cfg(reason);
+    const { model, effort, apiKey, language } = cfg(reason);
     if (!cached || cached.key !== apiKey) cached = { key: apiKey, client: clientFor(apiKey) };
     const client = cached.client;
     const response = await client.beta.messages.create({
@@ -122,7 +128,7 @@ export function makeClaudeCaller(cfg: (reason?: TriggerReason) => { model: strin
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       output_config: { effort, format: { type: "json_schema", schema: ADVICE_SCHEMA } },
-      system: SYSTEM_PROMPT,
+      system: systemPrompt(language),
       messages: [{ role: "user", content: JSON.stringify(payload) }],
     });
     if (response.stop_reason === "refusal") {
@@ -259,8 +265,10 @@ export class Advisor {
           summary: String(raw.summary ?? ""),
           danger: raw.danger ?? "low",
           // Drop item keys the model made up
-          next_items: (raw.next_items ?? []).filter((i) => getItem(i.item)).slice(0, 4),
+          next_items: (raw.next_items ?? []).filter((i) => getItem(i.item)).slice(0, 6),
           skill_priority: raw.skill_priority ?? [],
+          skill_build: (raw.skill_build ?? []).filter((k): k is string => typeof k === "string").slice(0, 8),
+          skill_base: spentOnAbilities(s),
           tips: (raw.tips ?? []).slice(0, 4),
           // Only a real neutral item key counts; the engine also checks it's from the current tier
           neutral: raw.neutral_item && neutralTierOf(raw.neutral_item) ? { item: raw.neutral_item, reason: String(raw.neutral_reason ?? "") } : null,

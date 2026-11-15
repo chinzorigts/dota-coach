@@ -328,3 +328,50 @@ describe("bug fixes: skill points, late start, ranked-only MMR", () => {
     expect(settings.get().rank.mmr).toBe(3025); // checked once, never taken back twice
   });
 });
+
+describe("Korean output and the post-game review", () => {
+  it("writes alerts and timers in the chosen language", async () => {
+    const { buildAlerts } = await import("../src/engine/alerts.js");
+    const { buildTimers } = await import("../src/engine/timers.js");
+    const s = normalize(rawGame({ hp: 10, tp: false }));
+    const ko = buildAlerts(s, 1, [], { lowHpPct: 25, goldAlert: 2000, lang: "ko" });
+    expect(ko.find((a) => a.id === "low-hp")!.text).toContain("체력 10%");
+    expect(ko.find((a) => a.id === "no-tp")!.text).toBe("TP 스크롤 없음");
+    expect(buildAlerts(s, 1, [], { lowHpPct: 25, goldAlert: 2000 }).find((a) => a.id === "no-tp")!.text).toBe("No TP scroll");
+    expect(buildTimers(s, {}, "ko").find((t) => t.id === "bounty")!.label).toBe("바운티 룬");
+    expect(buildTimers(s).find((t) => t.id === "bounty")!.label).toBe("Bounty rune");
+  });
+
+  it("asks the model to answer in Korean by default and in English when set", async () => {
+    const { systemPrompt } = await import("../src/ai/prompt.js");
+    expect(systemPrompt("ko")).toContain("Korean");
+    expect(systemPrompt("en")).toContain("Write in English.");
+    expect(systemPrompt("ko")).not.toContain("__LANGUAGE__");
+    expect(defaultSettings().language).toBe("ko");
+    expect(mergeSettings(defaultSettings(), { language: "en" }).language).toBe("en");
+    expect(mergeSettings(defaultSettings(), { language: "xx" }).language).toBe("ko");
+  });
+
+  it("reviews a finished match once, with the result and the numbers", async () => {
+    const settings = new SettingsStore(null);
+    settings.setApiKey("sk-test-key-that-is-long-enough");
+    const state = new CoachState(new Advisor({ runtime: rt(false), call: null }), async () => null, undefined as never, settings, async () => null, async () => null, async () => null);
+    const seen: { payload: any; language: string }[] = [];
+    state.reviewCaller = async (payload, o) => {
+      seen.push({ payload, language: o.language });
+      return { summary: "요약", good: ["막타 좋음"], improve: ["데스 줄이기"] };
+    };
+    state.ingest(rawGame({ matchId: "900", clock: 1800 }));
+    expect(seen).toHaveLength(0); // still playing
+    const end = rawGame({ matchId: "900", clock: 2400 });
+    end.map!.win_team = "dire";
+    state.ingest(end);
+    state.ingest(end);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(seen).toHaveLength(1);
+    expect(seen[0].language).toBe("ko");
+    expect(seen[0].payload).toMatchObject({ hero: "Juggernaut", result: "loss", duration: "40 min", kda: "2/0/3" });
+    expect(state.review).toMatchObject({ matchId: "900", won: false, summary: "요약", improve: ["데스 줄이기"] });
+    expect(state.toJSON().reviewStatus).toBe("idle");
+  });
+});

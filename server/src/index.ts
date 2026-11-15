@@ -19,10 +19,13 @@ const advisor = new Advisor({
     };
   },
   call: makeClaudeCaller((reason) => ({
-    // Your typed questions get the main model; everything automatic gets the faster live model
-    model: reason === "manual" ? settings.get().ai.model : settings.get().ai.liveModel,
+    // The reads that set the plan (your questions, the opening read, a new enemy lineup) get the main model:
+    // a few seconds more is fine there and the build quality matters. Mid-fight updates (deaths, respawns,
+    // purchases, 5-minute checks) get the faster live model.
+    model: reason === "manual" || reason === "hero" || reason === "enemies" ? settings.get().ai.model : settings.get().ai.liveModel,
     effort: settings.get().ai.effort,
     apiKey: settings.resolvedKey(),
+    language: settings.get().language,
   })),
 });
 const state = new CoachState(advisor, undefined, undefined, settings);

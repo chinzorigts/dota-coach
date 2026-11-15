@@ -503,3 +503,18 @@ button.link { background: none; border: 0; padding: 0; color: var(--gold); curso
 .ov.locked:has(.ov-grip) { padding-top: 14px; }
 .ov-grip { top: 2px; right: auto; left: 50%; transform: translateX(-50%); width: 44px; height: 10px; border-radius: 5px; }
 .ov-grip i { display: block; width: 26px; height: 3px; border-radius: 2px; background: currentColor; font-size: 0; }
+
+/* ── post-game review ─────────────────────────────────────────── */
+.review-res { font: 600 15px var(--f-num); }
+.review-res.won { color: var(--radiant); }
+.review-res.lost { color: var(--dire); }
+.review-summary { margin: 0 0 var(--s3); }
+.review-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--s4); }
+.review-cols h3 { margin: 0 0 var(--s1); font-size: 13px; font-weight: 600; }
+.review-cols h3.good { color: var(--radiant); }
+.review-cols h3.improve { color: var(--gold); }
+.review-cols ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
+.ov-review { gap: 3px; }
+.ov-review .review-res { font-size: 13px; }
+.ov-review p { margin: 0; font-size: 12px; line-height: 1.4; color: rgb(231 224 204 / 0.92); }
+.ov-review .ov-review-fix { color: var(--gold); }
