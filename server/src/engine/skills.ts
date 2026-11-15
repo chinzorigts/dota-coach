@@ -1,5 +1,5 @@
 import type { GameSnapshot } from "../gsi/normalize.js";
-import { getAbility, getHeroAbilities } from "../data/constants.js";
+import { getAbility, getHeroAbilities, takesSkillPoints } from "../data/constants.js";
 import type { SkillRec } from "./types.js";
 
 /** Levels that grant no ability point (7.33+ rules) */
@@ -12,11 +12,17 @@ export function pointsEarned(level: number): number {
   return pts;
 }
 
-/** The hero's own skills that take points: no innates, and nothing that isn't in the hero's ability list */
+/**
+ * The hero's own skills that take points. GSI also lists sub-abilities and linked twins with levels of their
+ * own (Morphling's two Attribute Shifts, Kunkka's Return...), which made spent points look higher than they were.
+ */
 function levelableAbilities(s: GameSnapshot) {
   const own = s.hero ? getHeroAbilities(s.hero.name)?.abilities : undefined;
   const ownSet = own?.length ? new Set(own) : null;
-  return s.abilities.filter((a) => !getAbility(a.name).innate && (!ownSet || ownSet.has(a.name)));
+  const mine = s.abilities.filter((a) => !getAbility(a.name).innate && (!ownSet || ownSet.has(a.name)));
+  const strict = mine.filter((a) => a.ultimate || takesSkillPoints(a.name));
+  // Unknown or unusual data (a new hero, missing constants): don't filter down to nothing
+  return strict.filter((a) => !a.ultimate).length >= 3 ? strict : mine;
 }
 
 /** Approximate: abilities granted at level 1 by Shard/Scepter can make this undercount */

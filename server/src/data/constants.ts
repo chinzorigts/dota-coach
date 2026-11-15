@@ -24,6 +24,10 @@ interface RawAbility {
   is_innate?: boolean;
   behavior?: string | string[];
   img?: string;
+  /** Per-level lists (mana cost, cooldown, attribute values): their length is the ability's level count */
+  mc?: unknown;
+  cd?: unknown;
+  attrib?: { value?: unknown }[];
 }
 interface RawHeroAbilities {
   abilities: string[];
@@ -151,6 +155,29 @@ export function getAbility(key: string): AbilityInfo {
     innate: Boolean(a?.is_innate),
     img: a?.img ? CDN + a.img.split("?")[0] : "",
   };
+}
+
+/** How many levels an ability has, read from its per-level value lists (mana cost, cooldown, attributes) */
+export function abilityMaxLevel(key: string): number {
+  const a = abilities[key];
+  if (!a) return 1;
+  const len = (v: unknown) => (Array.isArray(v) ? v.length : 1);
+  return Math.max(len(a.mc), len(a.cd), ...(a.attrib ?? []).map((x) => len(x.value)));
+}
+
+/** Second halves of abilities that share one level: one skill point raises both, so only the first is counted */
+const LINKED_TWINS = new Set(["morphling_morph_str"]);
+
+/**
+ * Does this ability take skill points of its own? Not innates, not hidden sub-abilities (Kunkka's Return,
+ * Invoker's invoked spells, Rubick's Telekinesis Land), not single-level extras (Shard/Scepter abilities,
+ * empty slots), and not the twin of a linked pair (Morphling's Attribute Shift).
+ */
+export function takesSkillPoints(key: string): boolean {
+  const a = abilities[key];
+  if (!a || a.is_innate || LINKED_TWINS.has(key)) return false;
+  const behavior = Array.isArray(a.behavior) ? a.behavior : [a.behavior ?? ""];
+  return !behavior.includes("Hidden") && abilityMaxLevel(key) >= 3;
 }
 
 export function getHeroAbilities(heroName: string): RawHeroAbilities | undefined {

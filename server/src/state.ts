@@ -33,6 +33,9 @@ export const GSI_STALE_MS = 75_000;
 const AI_VISION_AFTER_GRABS = 4;
 const AI_VISION_MAX_TRIES = 2;
 
+/** Grabs allowed after the cut-off when no enemy is known yet (app started mid-game) */
+const LATE_START_GRABS = 8;
+
 /** Stop top-bar capture after this much game time (see visionWanted) */
 const VISION_GIVE_UP_SEC = 15 * 60;
 
@@ -44,7 +47,8 @@ const ME_REFRESH_AFTER_GAME_MS = 20 * 60 * 1000;
 
 /** Applied MMR changes, kept so a match is never counted twice (even across restarts) and the last one can be undone */
 interface RankHistory {
-  applied: { matchId: string; delta: number; at: number }[];
+  /** checked = OpenDota has since told us whether the match was ranked */
+  applied: { matchId: string; delta: number; at: number; checked?: boolean }[];
 }
 import type { LobbyInfo, TeamSide } from "./matchlog/parser.js";
 import type { WatcherStatus } from "./matchlog/watcher.js";
@@ -407,8 +411,33 @@ export class CoachState {
         if (this.recent !== entry) return;
         // A failed refresh keeps the list we already had
         if (d !== null || entry.data === "loading") entry.data = d;
+        if (d) this.reconcileRank(d);
         this.emit();
       });
+  }
+
+  /**
+   * GSI can't tell ranked from unranked, so a finished game changes the MMR right away and is checked here once
+   * OpenDota lists the match: an unranked game (normal, turbo...) is taken back out automatically.
+   */
+  private reconcileRank(recent: RecentMatch[]) {
+    const history = this.rankHistory();
+    let changed = false;
+    let revert = 0;
+    history.applied = history.applied.map((a) => {
+      if (a.checked) return a;
+      const m = recent.find((r) => String(r.matchId) === a.matchId);
+      if (!m) return a;
+      changed = true;
+      if (m.ranked || a.delta === 0) return { ...a, checked: true };
+      revert += a.delta;
+      return { ...a, delta: 0, checked: true };
+    });
+    if (!changed) return;
+    this.settings.saveData("rank.json", history);
+    const mmr = this.settings.get().rank.mmr;
+    if (revert !== 0 && mmr !== null) this.settings.update({ rank: { mmr: Math.max(0, mmr - revert) } });
+    if (revert !== 0) console.log("[rank] unranked match: took back " + (revert > 0 ? "+" : "") + revert + " MMR");
   }
 
   /** Your last 5 matches with hero names, for the dashboard and the pre-game overlay */
@@ -608,8 +637,9 @@ export class CoachState {
     return Boolean(
       this.settings.get().detection.enabled && s?.hero && s.team && s.inProgress &&
         this.enemySource !== "manual" && this.enemySource !== "gsi" && this.enemies.length < 5 &&
-        // All ten portraits are there from the horn; what isn't recognised by 15:00 won't be by grabbing more
-        s.clockTime < VISION_GIVE_UP_SEC,
+        // All ten portraits are there from the horn; what isn't recognised by 15:00 won't be by grabbing more.
+        // Exception: nothing found yet and we've barely looked (the app was started or restarted mid-game).
+        (s.clockTime < VISION_GIVE_UP_SEC || (this.enemies.length === 0 && this.visionGrabs < LATE_START_GRABS)),
     );
   }
 

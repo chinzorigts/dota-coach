@@ -273,3 +273,58 @@ describe("draft", () => {
     expect(taken).toEqual([]);
   });
 });
+
+describe("bug fixes: skill points, late start, ranked-only MMR", () => {
+  const mk = (settings = new SettingsStore(null)) => {
+    const state = new CoachState(new Advisor({ runtime: rt(false), call: null }), async () => null, undefined as never, settings, async () => null, async () => null, async () => null);
+    state.draftDeps = { loadHeroStats: async () => null, loadMatchups: async () => null };
+    return { state, settings };
+  };
+
+  it("counts Morphling's linked Attribute Shift once and ignores hidden sub-abilities", async () => {
+    const { unspentPoints } = await import("../src/engine/skills.js");
+    const raw = rawGame({ hero: "npc_dota_hero_morphling", heroId: 10, level: 3 });
+    // Level 3: Waveform 1, Adaptive Strike 1, Attribute Shift 1 (GSI reports both halves at level 1)
+    raw.abilities = {
+      ability0: { name: "morphling_waveform", level: 1 },
+      ability1: { name: "morphling_adaptive_strike_agi", level: 1 },
+      ability2: { name: "morphling_morph_agi", level: 1 },
+      ability3: { name: "morphling_morph_str", level: 1 },
+      ability4: { name: "morphling_replicate", level: 0, ultimate: true },
+      ability5: { name: "morphling_morph_replicate", level: 1 },
+    };
+    expect(unspentPoints(normalize(raw))).toBe(0);
+    raw.hero!.level = 4;
+    expect(unspentPoints(normalize(raw))).toBe(1); // used to read 0: the twin ate the point
+  });
+
+  it("still looks for enemies when started after 15:00 with none known, but not forever", () => {
+    const { state, settings } = mk();
+    settings.update({ detection: { enabled: true } });
+    state.ingest(rawGame({ clock: 20 * 60 }));
+    expect(state.visionWanted()).toBe(true);
+    (state as unknown as { visionGrabs: number }).visionGrabs = 8;
+    expect(state.visionWanted()).toBe(false);
+  });
+
+  it("takes an unranked game back out of the MMR once OpenDota lists it, and keeps ranked ones", async () => {
+    const { state, settings } = mk();
+    settings.update({ rank: { mmr: 3000 } });
+    const game = (matchId: string) => {
+      const g = rawGame({ matchId });
+      g.player!.steamid = "76561198060265734"; // account 100000006
+      g.map!.win_team = "radiant";
+      return g;
+    };
+    const base = { heroId: 8, won: true, kills: 1, deaths: 1, assists: 1, gpm: 1, xpm: 1, lastHits: 1, durationSec: 1, startTime: 1 };
+    state.loadRecent = async () => [{ ...base, matchId: 501, ranked: false }, { ...base, matchId: 502, ranked: true }];
+    state.ingest(game("501"));
+    state.ingest(game("502"));
+    expect(settings.get().rank.mmr).toBe(3050);
+    await new Promise((r) => setTimeout(r, 0)); // recent matches arrive
+    expect(settings.get().rank.mmr).toBe(3025); // 501 was unranked, 502 stays
+    (state as unknown as { loadRecentFor(id: number, fresh: boolean): void }).loadRecentFor(100000006, true);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(settings.get().rank.mmr).toBe(3025); // checked once, never taken back twice
+  });
+});
