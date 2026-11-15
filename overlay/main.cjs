@@ -540,6 +540,21 @@ function slots(shot, r) {
   );
 }
 
+/** Whole portraits as PNGs, enlarged 3x so small top-bar art is readable @param {Electron.NativeImage} shot @param {Rect01} r */
+function slotPngs(shot, r) {
+  const { width, height } = shot.getSize();
+  const slotW = (r.w * width) / 5;
+  const w = Math.max(1, Math.round(slotW));
+  const h = Math.max(1, Math.round(r.h * height));
+  return Array.from({ length: 5 }, (_, i) =>
+    shot
+      .crop({ x: Math.round(r.x * width + i * slotW), y: Math.round(r.y * height), width: w, height: h })
+      .resize({ width: w * 3, height: h * 3, quality: "best" })
+      .toPNG()
+      .toString("base64"),
+  );
+}
+
 async function detectionTick() {
   if (detecting) return;
   const cal = activeCalibration();
@@ -549,6 +564,22 @@ async function detectionTick() {
     if (!status.wanted) {
       unchangedGrabs = 0;
       lastEnemyCount = -1;
+      return;
+    }
+    // The matcher is stuck on some slots (arcana/persona art): send one sharp set of portraits for the AI.
+    // A single full-resolution grab, at most twice per match (the server decides when).
+    if (status.hiRes) {
+      const { image: sharp } = await captureDisplay(targetDisplay(), 1);
+      if (sharp && !sharp.isEmpty()) {
+        await fetch(BASE + "/api/vision/portraits", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ radiant: slotPngs(sharp, cal.radiant), dire: slotPngs(sharp, cal.dire) }),
+          signal: AbortSignal.timeout(30_000),
+        });
+        unchangedGrabs = 0;
+        skipTick = 0;
+      }
       return;
     }
     // Nothing new for a while (e.g. a hero we can't recognise): grab less often

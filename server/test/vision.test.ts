@@ -84,3 +84,25 @@ describe("EnemyDetector", () => {
     expect(res!.enemies).toEqual(foes.slice(0, 3));
   });
 });
+
+describe("AI fallback for portraits the matcher can't place", () => {
+  it("maps names to hero keys and drops unsure answers", async () => {
+    const { heroKeyFromName, parseIdentification } = await import("../src/vision/identify.js");
+    expect(heroKeyFromName("Anti-Mage")).toBe("npc_dota_hero_antimage");
+    expect(heroKeyFromName("crystal maiden")).toBe("npc_dota_hero_crystal_maiden");
+    expect(heroKeyFromName("unknown")).toBeNull();
+    const out = parseIdentification('Here: {"heroes":[{"name":"Rubick","sure":false},{"name":"Juggernaut","sure":true},{"name":"Nope","sure":true}]}', 3);
+    expect(out).toEqual([null, "npc_dota_hero_juggernaut", null]);
+    expect(parseIdentification("no json", 2)).toEqual([null, null]);
+  });
+
+  it("keeps several looks per hero in the bank and lets the detector take an outside answer", () => {
+    const d = new EnemyDetector(bank);
+    expect(d.pending()).toEqual([0, 1, 2, 3, 4]);
+    expect(d.confirmExternal(3, HEROES[70], HEROES[0])).toBe(true);
+    expect(d.confirmExternal(4, HEROES[70], HEROES[0])).toBe(false); // already placed
+    expect(d.confirmExternal(1, HEROES[0], HEROES[0])).toBe(false); // my own hero is never an enemy
+    expect(d.enemies()).toEqual([HEROES[70]]);
+    expect(d.pending()).toEqual([0, 1, 2, 4]);
+  });
+});

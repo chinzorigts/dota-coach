@@ -50,6 +50,27 @@ export class EnemyDetector {
     this.ownSeen = false;
   }
 
+  /** Which captured row holds the enemies (accounts for rows drawn the wrong way round) */
+  enemySideFor(myTeam: Side): Side {
+    return (myTeam === "radiant") !== this.swapped ? "dire" : "radiant";
+  }
+
+  /** Enemy slots the matcher hasn't confirmed (arcana/persona art, or an empty slot) */
+  pending(): number[] {
+    return this.confirmed.flatMap((c, i) => (c === null ? [i] : []));
+  }
+
+  /** A hero identified some other way (the AI) for a slot the matcher couldn't confirm */
+  confirmExternal(slot: number, hero: string, myHero: string): boolean {
+    if (slot < 0 || slot > 4 || this.confirmed[slot] || hero === myHero || this.confirmed.includes(hero)) return false;
+    this.confirmed[slot] = hero;
+    return true;
+  }
+
+  enemies(): string[] {
+    return this.confirmed.filter((c): c is string => c !== null);
+  }
+
   update(frames: Record<Side, RGBImage[]>, myTeam: Side, myHero: string): DetectionResult {
     const radiant = frames.radiant.map((s) => accept(this.bank.match(s)));
     const dire = frames.dire.map((s) => accept(this.bank.match(s)));

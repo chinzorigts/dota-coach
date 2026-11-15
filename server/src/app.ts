@@ -135,7 +135,7 @@ export function createApp(
 
       // Overlay asks whether it should keep capturing the top bar
       if (url.pathname === "/api/vision/status") {
-        return json(res, 200, { wanted: state.visionWanted(), ...state.detection });
+        return json(res, 200, { wanted: state.visionWanted(), hiRes: state.hiResWanted(), ...state.detection });
       }
 
       if (req.method === "POST" && url.pathname === "/api/vision/topbar") {
@@ -143,6 +143,19 @@ export function createApp(
         if (typeof frames === "string") return json(res, 400, { error: frames });
         const status = await state.ingestVision(frames);
         return json(res, 200, { wanted: state.visionWanted(), enemies: state.enemies, ...status });
+      }
+
+      // One sharp set of portraits for the AI when the matcher is stuck (see CoachState.hiResWanted)
+      if (req.method === "POST" && url.pathname === "/api/vision/portraits") {
+        const body = JSON.parse((await readBody(req, 1_500_000)) || "{}");
+        const side = (list: unknown) =>
+          Array.isArray(list) && list.length === 5 && list.every((b) => typeof b === "string" && b.length < 200_000)
+            ? (list as string[]).map((b) => Buffer.from(b, "base64"))
+            : null;
+        const radiant = side(body.radiant);
+        const dire = side(body.dire);
+        if (!radiant || !dire) return json(res, 400, { error: "radiant and dire must each be 5 base64 PNGs" });
+        return json(res, 200, { ...(await state.ingestPortraits({ radiant, dire })), enemies: state.enemies });
       }
 
       if (url.pathname.startsWith("/api/settings")) {

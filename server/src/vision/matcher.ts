@@ -73,7 +73,8 @@ export class TemplateBank {
     const variants = VARIANTS.map((f) =>
       features(f === 1 ? img : crop(img, (img.w * (1 - f)) / 2, (img.h * (1 - f)) / 2, img.w * f, img.h * f)),
     );
-    this.templates.set(key, variants);
+    // A hero can have several looks (base art plus learned arcana/persona portraits): keep them all
+    this.templates.set(key, [...(this.templates.get(key) ?? []), ...variants]);
   }
 
   get size() {

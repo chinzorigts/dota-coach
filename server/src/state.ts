@@ -29,6 +29,10 @@ import { ownedItems } from "./engine/items.js";
  */
 export const GSI_STALE_MS = 75_000;
 
+/** Grabs to give the matcher before asking the AI, and how often the AI may be asked per match */
+const AI_VISION_AFTER_GRABS = 4;
+const AI_VISION_MAX_TRIES = 2;
+
 /** Stop top-bar capture after this much game time (see visionWanted) */
 const VISION_GIVE_UP_SEC = 15 * 60;
 
@@ -49,7 +53,10 @@ import type { Advisor } from "./ai/advisor.js";
 import { EnemyDetector, type DetectionResult, type Side, type SlotResult } from "./vision/detector.js";
 import type { RGBImage } from "./vision/image.js";
 import type { TemplateBank } from "./vision/matcher.js";
-import { getTemplateBank } from "./vision/templates.js";
+import { getTemplateBank, saveLearnedPortrait } from "./vision/templates.js";
+import { identifyPortraits, type PortraitIdentifier } from "./vision/identify.js";
+import { fromRGBA } from "./vision/image.js";
+import { PNG } from "pngjs";
 import { SettingsStore } from "./settings.js";
 
 /** Where the current enemy list came from. Manual always wins; auto sources never overwrite it. */
@@ -98,6 +105,12 @@ export class CoachState {
   enemySource: EnemySource = "none";
   detection: DetectionStatus = emptyDetection();
   private detector: EnemyDetector | null = null;
+  /** AI fallback for portraits the matcher can't place. Replaceable in tests. */
+  identify: PortraitIdentifier = identifyPortraits;
+  persistLearned: (hero: string, png: Buffer) => Promise<void> = saveLearnedPortrait;
+  private visionGrabs = 0;
+  private aiVisionTries = 0;
+  private identifying = false;
   rolePref: RolePref = "auto";
   popularity: ItemPopularity | null = null;
   popularityHero: number | null = null;
@@ -174,6 +187,8 @@ export class CoachState {
       this.enemies = [];
       this.enemySource = "none";
       this.detector?.reset();
+      this.visionGrabs = 0;
+      this.aiVisionTries = 0;
       this.detection = emptyDetection();
       this.advisor.reset();
       this.purchases = [];
@@ -556,6 +571,8 @@ export class CoachState {
     const valid = [...new Set(heroes)].filter((h) => getHero(h)).slice(0, 5);
     if (valid.length === 0) {
       this.detector?.reset();
+      this.visionGrabs = 0;
+      this.aiVisionTries = 0;
       this.detection = emptyDetection();
     }
     this.updateEnemies(valid, valid.length ? "manual" : "none");
@@ -605,6 +622,7 @@ export class CoachState {
       if (bank.size === 0) throw new Error("Hero portraits could not be downloaded (offline?)");
       this.detector ??= new EnemyDetector(bank);
       const res = this.detector.update(frames, s.team, s.hero.name);
+      this.visionGrabs++;
       this.detection = { calibration: res.calibration, slots: res.enemySlots, lastAt: Date.now(), error: null };
       // Only grow the list; a later bad frame never removes a confirmed hero
       if (this.enemySource !== "manual" && res.enemies.length > this.enemies.length) {
@@ -615,6 +633,61 @@ export class CoachState {
     }
     this.emit();
     return this.detection;
+  }
+
+  /**
+   * Ask the overlay for one sharp set of portraits when the matcher is stuck: the rows are in the right place,
+   * a few grabs have gone by, and some enemy slots still aren't confirmed (arcana/persona art). At most twice
+   * per match, and only with AI on and a key set.
+   */
+  hiResWanted(): boolean {
+    return Boolean(
+      this.visionWanted() && this.detector && this.detection.calibration !== "bad" && this.detection.calibration !== null &&
+        this.visionGrabs >= AI_VISION_AFTER_GRABS && this.detector.pending().length > 0 &&
+        this.aiVisionTries < AI_VISION_MAX_TRIES && !this.identifying &&
+        this.settings.get().ai.enabled && this.settings.hasCredentials(),
+    );
+  }
+
+  /** Sharp portraits (PNG), 5 per side: the AI names the enemy slots the matcher couldn't, and they're learned */
+  async ingestPortraits(pngs: Record<Side, Buffer[]>): Promise<{ identified: string[] }> {
+    const s = this.snapshot;
+    if (!this.hiResWanted() || !s?.hero || !s.team || !this.detector) return { identified: [] };
+    this.identifying = true;
+    this.aiVisionTries++;
+    const identified: string[] = [];
+    try {
+      const detector = this.detector;
+      const side = detector.enemySideFor(s.team);
+      const pending = detector.pending();
+      const ai = this.settings.get().ai;
+      const names = await this.identify(pending.map((i) => pngs[side][i]), { model: ai.model, apiKey: this.settings.resolvedKey() });
+      const { bank } = await this.loadBank();
+      for (const [n, slot] of pending.entries()) {
+        const hero = names[n];
+        if (!hero || !getHero(hero) || this.detector !== detector) continue;
+        if (!detector.confirmExternal(slot, hero, s.hero.name)) continue;
+        identified.push(hero);
+        // Learn this look so the matcher handles it alone next time
+        try {
+          const png = PNG.sync.read(pngs[side][slot]);
+          bank.add(hero, fromRGBA(png.width, png.height, png.data));
+          await this.persistLearned(hero, pngs[side][slot]);
+        } catch (err) {
+          console.warn("[vision] could not save a learned portrait:", (err as Error).message);
+        }
+      }
+      if (identified.length) {
+        console.log(`[vision] AI identified ${identified.map((h) => h.replace("npc_dota_hero_", "")).join(", ")}`);
+        if (this.enemySource !== "manual") this.updateEnemies(detector.enemies(), "vision");
+      }
+    } catch (err) {
+      console.warn("[vision] AI portrait identification failed:", (err as Error).message);
+    } finally {
+      this.identifying = false;
+    }
+    this.emit();
+    return { identified };
   }
 
   setRole(role: RolePref) {
