@@ -54,7 +54,7 @@ const settingsFile = () => path.join(app.getPath("userData"), "overlay.json");
 /**
  * @typedef {{ x: number; y: number; w: number; h: number }} Rect01  fractions of the screen
  * @typedef {{ radiant: Rect01; dire: Rect01; displayId: number }} Calibration
- * @typedef {{ bounds?: Electron.Rectangle; calibration?: Calibration; autostart?: boolean }} Settings
+ * @typedef {{ bounds?: Electron.Rectangle; calibration?: Calibration; autostart?: boolean; gpu?: boolean }} Settings
  */
 
 /** @returns {Settings} */
@@ -404,6 +404,17 @@ function refreshTray() {
       { label: loadSettings().calibration ? "Adjust enemy detection (manual)…" : "Adjust enemy detection (optional)…", click: () => void calibrate() },
       { label: "Open full dashboard", click: () => shell.openExternal(BASE) },
       { label: "Open server log", click: () => void shell.openPath(serverLogFile()) },
+      {
+        label: "Draw overlay with the GPU (try if the game stutters)",
+        type: /** @type {const} */ ("checkbox"),
+        checked: Boolean(loadSettings().gpu),
+        click: () => {
+          // Only takes effect at startup, so restart the overlay (its server restarts with it, a few seconds)
+          saveSettings({ gpu: !loadSettings().gpu });
+          app.relaunch();
+          app.quit();
+        },
+      },
       ...(process.platform === "win32"
         ? [{ label: "Start with Windows", type: /** @type {const} */ ("checkbox"), checked: autostartEnabled(), click: () => setAutostart(!autostartEnabled()) }]
         : []),
@@ -672,10 +683,14 @@ if (!app.requestSingleInstanceLock()) {
   // Transparency needs compositing; some Linux GPUs draw a black box without this.
   if (process.platform === "linux") app.commandLine.appendSwitch("enable-transparent-visuals");
 
-  // A small text panel doesn't need the GPU. Software rendering keeps the overlay off the graphics card
-  // the game is using (no shared GPU queue, no driver-level hiccups) and drops the ~100 MB GPU process.
-  // Set COACH_OVERLAY_GPU=1 to turn hardware acceleration back on if text ever looks wrong.
-  if (process.env.COACH_OVERLAY_GPU !== "1") app.disableHardwareAcceleration();
+  // Two ways to draw the transparent window over the game, switchable from the tray ("Draw overlay with
+  // the GPU"), because which one the game feels less depends on the PC:
+  //  - software (default): no GPU work at all, but each repaint is a CPU bitmap pushed as a classic layered
+  //    window, which Windows always composites on top of the game
+  //  - GPU: drawn through DirectComposition, which recent GPUs can put on a separate hardware plane, so the
+  //    game can keep presenting straight to the screen; costs a GPU process (~100 MB)
+  // COACH_OVERLAY_GPU=1 forces the GPU path.
+  if (process.env.COACH_OVERLAY_GPU !== "1" && !loadSettings().gpu) app.disableHardwareAcceleration();
   // Keep V8 small: the overlay page holds almost nothing.
   app.commandLine.appendSwitch("js-flags", "--max-old-space-size=128");
   lowerPriority(process.pid);

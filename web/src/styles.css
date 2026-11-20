@@ -518,3 +518,12 @@ button.link { background: none; border: 0; padding: 0; color: var(--gold); curso
 .ov-review .review-res { font-size: 13px; }
 .ov-review p { margin: 0; font-size: 12px; line-height: 1.4; color: rgb(231 224 204 / 0.92); }
 .ov-review .ov-review-fix { color: var(--gold); }
+
+/* ── overlay: paint as little as possible ─────────────────────────
+   Every repaint of a transparent window over the game is a full bitmap copy plus a recomposition by Windows.
+   Animations (the 0.4s progress-bar slide, hover fades) turn one change into ~25 repaints, so the overlay
+   has none: values jump to their new state in a single paint. */
+html.overlay-root *, html.overlay-root *::before, html.overlay-root *::after {
+  transition: none !important;
+  animation: none !important;
+}

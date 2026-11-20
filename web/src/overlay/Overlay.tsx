@@ -54,7 +54,8 @@ function Pill({ tone, children }: { tone: "go" | "ok" | "bad" | "muted"; childre
  * so it shows only what changes a decision: next buy, next skill, danger, the nearest timers, AI summary.
  */
 export function Overlay() {
-  const { state, connected } = useCoach();
+  // Two renders a second at most: purchases and timers still show within half a second, with far fewer repaints
+  const { state, connected } = useCoach(500);
   // In a plain browser (no Electron) treat it as unlocked so the page is usable for previews.
   const [locked, setLocked] = useState(Boolean(bridge()));
   const [hk, setHk] = useState<OverlayMode["hotkeys"] | null>(null);
