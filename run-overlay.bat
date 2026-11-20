@@ -44,11 +44,24 @@ if errorlevel 1 (
 )
 
 echo.
-echo [4/5] 빌드 (오버레이 화면 + 서버 번들)...
-call npm run build -w web
-if errorlevel 1 goto :fail
-call npm run bundle -w server
-if errorlevel 1 goto :fail
+echo [4/5] 빌드 (바뀐 것만)...
+rem Rebuild only what changed since the last launch: most launches skip both and start in a second or two
+node scripts\needs-build.cjs web
+if errorlevel 1 (
+  echo 화면: 변경 없음.
+) else (
+  call npm run build -w web
+  if errorlevel 1 goto :fail
+  node scripts\needs-build.cjs web --mark
+)
+node scripts\needs-build.cjs server
+if errorlevel 1 (
+  echo 서버: 변경 없음.
+) else (
+  call npm run bundle -w server
+  if errorlevel 1 goto :fail
+  node scripts\needs-build.cjs server --mark
+)
 
 echo.
 echo [5/5] 오버레이 실행...

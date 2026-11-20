@@ -2,6 +2,7 @@
 // Input is what the coach already tracked (final stats, you-vs-average rows, what was bought and when, the
 // enemy lineup); output is a couple of things done well and a couple to work on next game.
 import Anthropic from "@anthropic-ai/sdk";
+import { recordUsage } from "./usage.js";
 
 export interface Review {
   matchId: string;
@@ -13,7 +14,22 @@ export interface Review {
   good: string[];
   improve: string[];
   at: number;
+  /** The numbers behind the trend view (older saved reviews don't have them) */
+  stats?: ReviewStats;
 }
+
+export interface ReviewStats {
+  gpm: number;
+  xpm: number;
+  lastHits: number;
+  deaths: number;
+  /** How many you-vs-average rows were behind / ahead */
+  behind: number;
+  ahead: number;
+}
+
+/** How many past reviews are kept for the history view */
+export const REVIEW_HISTORY = 20;
 
 export type ReviewText = Pick<Review, "summary" | "good" | "improve">;
 export type ReviewCaller = (payload: unknown, opts: { model: string; apiKey: string | null; language: "ko" | "en" }) => Promise<ReviewText>;
@@ -49,6 +65,7 @@ export const callReview: ReviewCaller = async (payload, { model, apiKey, languag
     system: system(language),
     messages: [{ role: "user", content: JSON.stringify(payload) }],
   });
+  recordUsage("review", model, res.usage);
   if (res.stop_reason === "refusal") throw new Error("The model declined to answer");
   if (res.stop_reason === "max_tokens") throw new Error("The response was cut off (max_tokens)");
   const text = res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");

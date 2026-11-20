@@ -3,20 +3,26 @@ import type { CoachState } from "../types";
 import { clock, itemImg } from "../format";
 import { Img } from "./Img";
 import { post } from "../useCoach";
+import { useT } from "../i18n";
 
-const REASON: Record<string, string> = {
-  hero: "Opening read",
-  death: "After death",
-  minute: "5-minute check",
-  enemies: "Enemy lineup update",
-  purchase: "Re-planned after your buy",
-  respawn: "After respawn",
-  neutral: "New neutral tier",
-  manual: "Your question",
-};
-const DANGER: Record<string, string> = { low: "Stable", medium: "Careful", high: "Danger" };
+const tokens = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
 
-export function AiPanel({ ai, names, clockNow }: { ai: CoachState["ai"]; names: CoachState["names"]; clockNow?: number }) {
+/** Calls, tokens and approximate cost this match and since the server started */
+function UsageLine({ usage }: { usage: CoachState["aiUsage"] }) {
+  const t = useT();
+  if (!usage || usage.session.calls === 0) return null;
+  const { match: m, session: s } = usage;
+  const approx = usage.priced ? "~" : "≥";
+  return (
+    <small className="meta usage" title={t.usageTitle}>
+      {t.usage(m.calls, tokens(m.inputTokens + m.outputTokens), `${approx}${usd(m.usd)}`, s.calls, `${approx}${usd(s.usd)}`)}
+    </small>
+  );
+}
+
+export function AiPanel({ ai, names, clockNow, usage }: { ai: CoachState["ai"]; names: CoachState["names"]; clockNow?: number; usage?: CoachState["aiUsage"] }) {
+  const t = useT();
   const [q, setQ] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
@@ -34,8 +40,8 @@ export function AiPanel({ ai, names, clockNow }: { ai: CoachState["ai"]; names: 
   if (!ai.enabled) {
     return (
       <div className="panel ai off">
-        <h3>AI coach</h3>
-        <p>Off. Add <code>ANTHROPIC_API_KEY</code> to <code>.env</code> at the repo root and restart the server to turn on situational analysis and questions. The picks you see now come from the rules and stats engine.</p>
+        <h3>{t.aiCoach}</h3>
+        <p>{t.aiOffBefore}<code>ANTHROPIC_API_KEY</code>{t.aiOffMid}<code>.env</code>{t.aiOffAfter}</p>
       </div>
     );
   }
@@ -44,10 +50,10 @@ export function AiPanel({ ai, names, clockNow }: { ai: CoachState["ai"]; names: 
   return (
     <div className="panel ai" aria-live="polite">
       <h3>
-        AI coach
-        {a && <span className={`danger ${a.danger}`}>{DANGER[a.danger]}</span>}
+        {t.aiCoach}
+        {a && <span className={`danger ${a.danger}`}>{t.danger[a.danger]}</span>}
       </h3>
-      {ai.pending && <p className="pending">Analyzing… ({REASON[ai.pending]})</p>}
+      {ai.pending && <p className="pending">{t.analyzing(t.aiReason[ai.pending] ?? ai.pending)}</p>}
       {ai.error && <p className="error">{ai.error}</p>}
       {a ? (
         <>
@@ -55,7 +61,7 @@ export function AiPanel({ ai, names, clockNow }: { ai: CoachState["ai"]; names: 
           <p className="summary">{a.summary}</p>
           {a.tips.length > 0 && (
             <ul className="tips">
-              {a.tips.map((t, i) => <li key={i}>{t}</li>)}
+              {a.tips.map((tip, i) => <li key={i}>{tip}</li>)}
             </ul>
           )}
           {a.next_items.length > 0 && (
@@ -69,25 +75,26 @@ export function AiPanel({ ai, names, clockNow }: { ai: CoachState["ai"]; names: 
             </div>
           )}
           <small className={`meta ${clockNow !== undefined && clockNow - a.clock > 90 ? "stale" : ""}`}>
-            {REASON[a.reason]}, at {clock(a.clock)}
-            {clockNow !== undefined && clockNow - a.clock >= 20 ? ` (${clock(clockNow - a.clock)} ago)` : ""}
-            {ai.lastMs ? ` · answered in ${(ai.lastMs / 1000).toFixed(1)}s` : ""}
+            {t.atClock(t.aiReason[a.reason] ?? a.reason, clock(a.clock))}
+            {clockNow !== undefined && clockNow - a.clock >= 20 ? t.ago(clock(clockNow - a.clock)) : ""}
+            {ai.lastMs ? t.answeredIn((ai.lastMs / 1000).toFixed(1)) : ""}
           </small>
         </>
       ) : (
-        !ai.pending && <p className="muted">The first read starts once your hero is locked in.</p>
+        !ai.pending && <p className="muted">{t.firstRead}</p>
       )}
       <form onSubmit={ask} className="ask">
-        <label htmlFor="ask-q" className="sr-only">Ask the AI coach</label>
+        <label htmlFor="ask-q" className="sr-only">{t.askLabel}</label>
         <input
           id="ask-q"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="e.g. BKB or Blink next?"
+          placeholder={t.askPlaceholder}
           maxLength={500}
         />
-        <button type="submit" disabled={Boolean(ai.pending)}>Ask</button>
+        <button type="submit" disabled={Boolean(ai.pending)}>{t.ask}</button>
       </form>
+      <UsageLine usage={usage} />
       {err && <p className="error">{err}</p>}
     </div>
   );

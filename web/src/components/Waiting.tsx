@@ -1,29 +1,32 @@
+import { useT } from "../i18n";
+
 export function Waiting({ connected, hasGsi, gameState }: { connected: boolean; hasGsi: boolean; gameState?: string }) {
+  const t = useT();
   if (!connected) {
     return (
       <div className="waiting">
-        <h1>Connecting to the server</h1>
-        <p>Check that <code>npm start</code> is running in a terminal. This page reconnects on its own.</p>
+        <h1>{t.connectingTitle}</h1>
+        <p>{t.connectingBefore}<code>npm start</code>{t.connectingAfter}</p>
       </div>
     );
   }
   if (hasGsi) {
     return (
       <div className="waiting">
-        <h1>Pick a hero to start</h1>
-        <p>Dota 2 is sending data{gameState ? ` (${gameState.replace("DOTA_GAMERULES_STATE_", "").toLowerCase()})` : ""}. Analysis appears as soon as your hero is locked in.</p>
+        <h1>{t.pickHeroTitle}</h1>
+        <p>{t.gsiSending(gameState ? gameState.replace("DOTA_GAMERULES_STATE_", "").toLowerCase() : "")}</p>
       </div>
     );
   }
   return (
     <div className="waiting">
-      <h1>Waiting for Dota 2</h1>
+      <h1>{t.waitingDotaTitle}</h1>
       <ol>
-        <li>Run <code>npm run install-cfg</code> to put the config file in your game folder.</li>
-        <li>In Steam, open Dota 2 &gt; Properties &gt; Launch Options and add <code>-gamestateintegration</code>.</li>
-        <li>Restart Dota 2 and join a game (a bot match works).</li>
+        <li>{t.step1Before}<code>npm run install-cfg</code>{t.step1After}</li>
+        <li>{t.step2Before}<code>-gamestateintegration</code>{t.step2After}</li>
+        <li>{t.step3}</li>
       </ol>
-      <p className="hint">To preview without a game, run <code>npm run mock</code> in another terminal.</p>
+      <p className="hint">{t.mockBefore}<code>npm run mock</code>{t.mockAfter}</p>
     </div>
   );
 }

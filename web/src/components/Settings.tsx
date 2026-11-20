@@ -1,48 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { Settings as SettingsT, SettingsView } from "../types";
 import { playOverlaySound } from "../overlay/sounds";
+import { strings, useT } from "../i18n";
 
-const TIMER_LABELS: Record<string, string> = {
-  bounty: "Bounty runes",
-  power: "Power runes",
-  wisdom: "Wisdom runes",
-  lotus: "Lotus pools",
-  daynight: "Day / night",
-  stack: "Camp stack (x:53)",
-  roshan: "Roshan respawn",
-};
-const SECTION_LABELS: Record<string, string> = {
-  item: "Next item",
-  skill: "Next skill",
-  neutral: "Neutral item pick",
-  alerts: "Danger alerts",
-  enemies: "Enemy heroes",
-  opponents: "Enemy players",
-  timers: "Timers",
-  ai: "AI summary",
-  benchmark: "You vs average",
-  rank: "Rank / MMR",
-  draft: "Pick suggestions (draft)",
-};
-const TRIGGER_LABELS: [keyof SettingsT["ai"]["triggers"], string][] = [
-  ["hero", "When my hero is locked in"],
-  ["death", "After I die"],
-  ["periodic", "Every 5 minutes"],
-  ["enemies", "When the enemy lineup changes"],
-  ["purchase", "When I buy something other than the suggestion"],
-  ["respawn", "When I respawn"],
-];
+const TRIGGER_KEYS: (keyof SettingsT["ai"]["triggers"])[] = ["hero", "death", "periodic", "enemies", "purchase", "respawn"];
 
 type DeepPartial<T> = { [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K] };
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body: unknown, failed: (status: number) => string): Promise<T> {
   const res = await fetch(path, {
     method,
     headers: body === undefined ? undefined : { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
+  if (!res.ok) throw new Error(data.error ?? failed(res.status));
   return data as T;
 }
 
@@ -64,7 +36,8 @@ function Range({ label, value, min, max, step, format, onChange, disabled }: {
   label: string; value: number; min: number; max: number; step: number;
   format: (v: number) => string; onChange: (v: number) => void; disabled?: boolean;
 }) {
-  const id = `r-${label.replace(/\W+/g, "-")}`;
+  // useId: labels are translated, and Korean text would reduce to the same id
+  const id = `r-${useId()}`;
   return (
     <div className="set-range">
       <label htmlFor={id}>{label}</label>
@@ -85,14 +58,18 @@ export function Settings({ onClose }: { onClose: () => void }) {
   const pending = useRef<DeepPartial<SettingsT>>({});
   const timer = useRef<number | undefined>(undefined);
   const savedTimer = useRef<number | undefined>(undefined);
+  const ctxT = useT();
+  // Follow the language picked on this screen right away, before the server state round-trips
+  const t = view ? strings(view.settings.language).set : ctxT.set;
+  const common = view ? strings(view.settings.language) : ctxT;
 
   useEffect(() => {
-    request<SettingsView>("GET", "/api/settings").then(setView).catch((e) => setError(e.message));
+    request<SettingsView>("GET", "/api/settings", undefined, t.requestFailed).then(setView).catch((e) => setError(e.message));
     return () => window.clearTimeout(timer.current);
   }, []);
 
   if (error && !view) return <div className="settings"><p className="error">{error}</p></div>;
-  if (!view) return <div className="settings"><p className="muted">Loading settings…</p></div>;
+  if (!view) return <div className="settings"><p className="muted">{t.loading}</p></div>;
 
   const s = view.settings;
   const ro = !view.canEdit;
@@ -106,7 +83,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
       const body = pending.current;
       pending.current = {};
       try {
-        const next = await request<SettingsView>("PATCH", "/api/settings", body);
+        const next = await request<SettingsView>("PATCH", "/api/settings", body, t.requestFailed);
         setView(next);
         setError(null);
         setSaved(true);
@@ -121,9 +98,9 @@ export function Settings({ onClose }: { onClose: () => void }) {
   async function saveKey() {
     setKeyMsg(null);
     try {
-      setView(await request<SettingsView>("PUT", "/api/settings/api-key", { key: keyInput }));
+      setView(await request<SettingsView>("PUT", "/api/settings/api-key", { key: keyInput }, t.requestFailed));
       setKeyInput("");
-      setKeyMsg({ ok: true, text: "Key saved. Use Test connection to check it." });
+      setKeyMsg({ ok: true, text: t.keySaved });
     } catch (e) {
       setKeyMsg({ ok: false, text: (e as Error).message });
     }
@@ -132,8 +109,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
   async function removeKey() {
     setKeyMsg(null);
     try {
-      setView(await request<SettingsView>("DELETE", "/api/settings/api-key"));
-      setKeyMsg({ ok: true, text: "Key removed." });
+      setView(await request<SettingsView>("DELETE", "/api/settings/api-key", undefined, t.requestFailed));
+      setKeyMsg({ ok: true, text: t.keyRemoved });
     } catch (e) {
       setKeyMsg({ ok: false, text: (e as Error).message });
     }
@@ -143,8 +120,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
     setTesting(true);
     setKeyMsg(null);
     try {
-      const r = await request<{ ok: boolean; model?: string; error?: string }>("POST", "/api/settings/test-ai");
-      setKeyMsg(r.ok ? { ok: true, text: `Connected. ${r.model} is ready.` } : { ok: false, text: r.error ?? "Failed" });
+      const r = await request<{ ok: boolean; model?: string; error?: string }>("POST", "/api/settings/test-ai", undefined, t.requestFailed);
+      setKeyMsg(r.ok ? { ok: true, text: t.connected(r.model ?? "") } : { ok: false, text: r.error ?? t.failed });
     } catch (e) {
       setKeyMsg({ ok: false, text: (e as Error).message });
     } finally {
@@ -153,69 +130,69 @@ export function Settings({ onClose }: { onClose: () => void }) {
   }
 
   async function reset() {
-    if (!confirm("Reset all settings to their defaults? Your API key is kept.")) return;
+    if (!confirm(t.resetConfirm)) return;
     try {
-      setView(await request<SettingsView>("POST", "/api/settings/reset"));
+      setView(await request<SettingsView>("POST", "/api/settings/reset", undefined, t.requestFailed));
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
   const keyText =
-    view.apiKey.source === "settings" ? `Saved here, ending in ${view.apiKey.last4}`
-    : view.apiKey.source === "env" ? `From .env${view.apiKey.last4 ? `, ending in ${view.apiKey.last4}` : ""}`
-    : "Not set. AI advice stays off until you add one";
+    view.apiKey.source === "settings" ? t.keySavedHere(view.apiKey.last4 ?? "")
+    : view.apiKey.source === "env" ? t.keyFromEnv(view.apiKey.last4 ?? "")
+    : t.keyNone;
 
   return (
     <div className="settings">
       <header className="set-head">
-        <h1>Settings</h1>
-        <span className={`set-saved ${saved ? "on" : ""}`} role="status">{saved ? "Saved" : ""}</span>
-        <button className="set-close" onClick={onClose}>Back to coach</button>
+        <h1>{t.title}</h1>
+        <span className={`set-saved ${saved ? "on" : ""}`} role="status">{saved ? t.saved : ""}</span>
+        <button className="set-close" onClick={onClose}>{t.back}</button>
       </header>
-      {ro && <p className="set-ro">You're viewing from another device. Settings can only be changed on the PC running Dota Coach.</p>}
+      {ro && <p className="set-ro">{t.readOnly}</p>}
       {error && <p className="error">{error}</p>}
 
       <section className="panel set-section">
-        <h2>AI coach</h2>
+        <h2>{t.aiCoach}</h2>
         <div className="set-key">
           <div>
-            <strong>Anthropic API key</strong>
+            <strong>{t.apiKey}</strong>
             <p className={view.apiKey.source === "none" ? "warn" : "muted"}>{keyText}</p>
           </div>
           {!ro && (
             <form className="set-key-form" onSubmit={(e) => { e.preventDefault(); void saveKey(); }}>
-              <label htmlFor="api-key" className="sr-only">API key</label>
+              <label htmlFor="api-key" className="sr-only">{t.apiKeyLabel}</label>
               <input id="api-key" type="password" autoComplete="off" spellCheck={false}
-                placeholder={view.apiKey.source === "none" ? "sk-ant-…" : "Paste a new key to replace it"}
+                placeholder={view.apiKey.source === "none" ? "sk-ant-…" : t.replaceKey}
                 value={keyInput} onChange={(e) => setKeyInput(e.target.value)} />
-              <button type="submit" className="primary" disabled={!keyInput.trim()}>Save key</button>
+              <button type="submit" className="primary" disabled={!keyInput.trim()}>{t.saveKey}</button>
               <button type="button" onClick={test} disabled={testing || view.apiKey.source === "none"}>
-                {testing ? "Testing…" : "Test connection"}
+                {testing ? t.testing : t.test}
               </button>
-              {view.apiKey.source === "settings" && <button type="button" onClick={removeKey}>Remove key</button>}
+              {view.apiKey.source === "settings" && <button type="button" onClick={removeKey}>{t.removeKey}</button>}
             </form>
           )}
           {keyMsg && <p className={keyMsg.ok ? "ok" : "error"} role="status">{keyMsg.text}</p>}
-          <p className="muted small">Stored only on this PC (in <code>.data/secrets.json</code>) and never shown again. A key saved here overrides <code>.env</code>.</p>
+          <p className="muted small">{t.keyStoreBefore}<code>.data/secrets.json</code>{t.keyStoreMid}<code>.env</code>{t.keyStoreAfter}</p>
         </div>
 
-        <Toggle label="AI advice" checked={s.ai.enabled} disabled={ro} onChange={(v) => change({ ai: { enabled: v } })}
-          hint="Off: only the rules and stats engine runs. Nothing is sent to the API" />
+        <Toggle label={t.aiAdvice} checked={s.ai.enabled} disabled={ro} onChange={(v) => change({ ai: { enabled: v } })}
+          hint={t.aiAdviceHint} />
 
         <fieldset className="set-group" disabled={ro || !s.ai.enabled}>
-          <legend>Model for in-game advice</legend>
+          <legend>{t.liveModel}</legend>
           {view.options.models.map((m) => (
             <label key={m.id} className="set-radio">
               <input type="radio" name="liveModel" checked={s.ai.liveModel === m.id} onChange={() => change({ ai: { liveModel: m.id } })} />
               <span>{m.label}<small>{m.note}</small></span>
             </label>
           ))}
-          <small className="muted">Used for automatic advice after picks, deaths and purchases, where a quick answer matters most.</small>
+          <small className="muted">{t.liveModelHint}</small>
         </fieldset>
 
         <fieldset className="set-group" disabled={ro || !s.ai.enabled}>
-          <legend>Model for your questions</legend>
+          <legend>{t.askModel}</legend>
           {view.options.models.map((m) => (
             <label key={m.id} className="set-radio">
               <input type="radio" name="model" checked={s.ai.model === m.id} onChange={() => change({ ai: { model: m.id } })} />
@@ -225,155 +202,154 @@ export function Settings({ onClose }: { onClose: () => void }) {
         </fieldset>
 
         <fieldset className="set-group" disabled={ro || !s.ai.enabled}>
-          <legend>Thinking depth</legend>
-          <div className="set-seg" role="radiogroup">
+          <legend>{t.effort}</legend>
+          <div className="set-seg" role="radiogroup" aria-label={t.effort}>
             {view.options.efforts.map((e) => (
               <button key={e} type="button" role="radio" aria-checked={s.ai.effort === e}
                 className={s.ai.effort === e ? "on" : ""} onClick={() => change({ ai: { effort: e as SettingsT["ai"]["effort"] } })}>
-                {e === "low" ? "Fast" : e === "medium" ? "Balanced" : "Deep"}
+                {e === "low" ? t.effortLow : e === "medium" ? t.effortMedium : t.effortHigh}
               </button>
             ))}
           </div>
-          <small className="muted">Deeper takes longer to answer mid-game and costs more.</small>
+          <small className="muted">{t.effortHint}</small>
         </fieldset>
 
         <fieldset className="set-group" disabled={ro || !s.ai.enabled}>
-          <legend>Analyze automatically</legend>
-          {TRIGGER_LABELS.map(([k, label]) => (
-            <Toggle key={k} label={label} checked={s.ai.triggers[k]} onChange={(v) => change({ ai: { triggers: { [k]: v } } })} />
+          <legend>{t.auto}</legend>
+          {TRIGGER_KEYS.map((k) => (
+            <Toggle key={k} label={t.triggers[k]} checked={s.ai.triggers[k]} onChange={(v) => change({ ai: { triggers: { [k]: v } } })} />
           ))}
-          <Range label="At most once every" value={s.ai.autoIntervalSec} min={30} max={600} step={5} disabled={ro || !s.ai.enabled}
-            format={(v) => (v < 60 ? `${v}s` : `${Math.floor(v / 60)}m${v % 60 ? ` ${v % 60}s` : ""}`)}
+          <Range label={t.interval} value={s.ai.autoIntervalSec} min={30} max={600} step={5} disabled={ro || !s.ai.enabled}
+            format={t.duration}
             onChange={(v) => change({ ai: { autoIntervalSec: v } })} />
-          <small className="muted">Applies to the 5-minute check. Asking manually is never limited.</small>
+          <small className="muted">{t.intervalHint}</small>
         </fieldset>
       </section>
 
       <section className="panel set-section">
-        <h2>Coaching</h2>
+        <h2>{t.coaching}</h2>
         <fieldset className="set-group" disabled={ro}>
-          <legend>Default role</legend>
-          <div className="set-seg" role="radiogroup">
+          <legend>{t.defaultRole}</legend>
+          <div className="set-seg" role="radiogroup" aria-label={t.defaultRole}>
             {(["auto", "core", "support"] as const).map((r) => (
               <button key={r} type="button" role="radio" aria-checked={s.coach.defaultRole === r}
                 className={s.coach.defaultRole === r ? "on" : ""} onClick={() => change({ coach: { defaultRole: r } })}>
-                {r === "auto" ? "Auto (from hero)" : r === "core" ? "Core" : "Support"}
+                {r === "auto" ? t.autoFromHero : r === "core" ? common.core : common.support}
               </button>
             ))}
           </div>
         </fieldset>
-        <Range label="Low HP warning at" value={s.coach.lowHpPct} min={5} max={60} step={1} disabled={ro}
+        <Range label={t.lowHp} value={s.coach.lowHpPct} min={5} max={60} step={1} disabled={ro}
           format={(v) => `${v}%`} onChange={(v) => change({ coach: { lowHpPct: v } })} />
-        <Range label="Remind me to spend gold at" value={s.coach.goldAlert} min={500} max={10000} step={100} disabled={ro}
-          format={(v) => v.toLocaleString("en-US")} onChange={(v) => change({ coach: { goldAlert: v } })} />
+        <Range label={t.goldAlert} value={s.coach.goldAlert} min={500} max={10000} step={100} disabled={ro}
+          format={(v) => v.toLocaleString(common.locale)} onChange={(v) => change({ coach: { goldAlert: v } })} />
         <fieldset className="set-group" disabled={ro}>
-          <legend>Timers</legend>
+          <legend>{common.timers}</legend>
           <div className="set-grid">
-            {view.options.timers.map((t) => (
-              <Toggle key={t} label={TIMER_LABELS[t] ?? t} checked={s.coach.timers[t] !== false}
-                onChange={(v) => change({ coach: { timers: { [t]: v } } })} />
+            {view.options.timers.map((k) => (
+              <Toggle key={k} label={t.timers[k] ?? k} checked={s.coach.timers[k] !== false}
+                onChange={(v) => change({ coach: { timers: { [k]: v } } })} />
             ))}
           </div>
         </fieldset>
       </section>
 
       <section className="panel set-section">
-        <h2>Overlay</h2>
+        <h2>{t.overlay}</h2>
         <fieldset className="set-group" disabled={ro}>
-          <legend>Show in the overlay</legend>
+          <legend>{t.showInOverlay}</legend>
           <div className="set-grid">
             {view.options.overlaySections.map((k) => (
-              <Toggle key={k} label={SECTION_LABELS[k] ?? k} checked={s.overlay.sections[k] !== false}
+              <Toggle key={k} label={t.sections[k] ?? k} checked={s.overlay.sections[k] !== false}
                 onChange={(v) => change({ overlay: { sections: { [k]: v } } })} />
             ))}
           </div>
         </fieldset>
-        <Range label="Background opacity" value={s.overlay.opacity} min={0.3} max={1} step={0.01} disabled={ro}
+        <Range label={t.opacity} value={s.overlay.opacity} min={0.3} max={1} step={0.01} disabled={ro}
           format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => change({ overlay: { opacity: v } })} />
-        <Range label="Text size" value={s.overlay.scale} min={0.8} max={1.5} step={0.05} disabled={ro}
+        <Range label={t.textSize} value={s.overlay.scale} min={0.8} max={1.5} step={0.05} disabled={ro}
           format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => change({ overlay: { scale: v } })} />
         <div className="set-range">
-          <label htmlFor="language">Language</label>
+          <label htmlFor="language">{t.language}</label>
           <select id="language" disabled={ro} value={s.language}
             onChange={(e) => change({ language: e.target.value as SettingsT["language"] })}>
             <option value="ko">한국어</option>
             <option value="en">English</option>
           </select>
         </div>
-        <p className="muted small">Overlay text, alerts, timers, spoken alerts and AI advice. Hero and item names stay in English.</p>
-        <Toggle label="Spoken alerts" checked={s.overlay.voice} disabled={ro}
+        <p className="muted small">{t.languageHint}</p>
+        <Toggle label={t.voice} checked={s.overlay.voice} disabled={ro}
           onChange={(v) => change({ overlay: { voice: v } })}
-          hint="Runes 15s out, low health, item affordable, skill point, and each new AI summary. Uses the sound volume below. Korean needs the Windows Korean speech voice; without it alerts are read in English." />
-        <Toggle label="Sound when the overlay opens and closes" checked={s.overlay.sound} disabled={ro}
-          onChange={(v) => change({ overlay: { sound: v } })} hint="Arcane: an air sweep into a soft bell. Plays on Ctrl+Shift+H and the tray menu." />
-        <Range label="Sound volume" value={s.overlay.soundVolume} min={0} max={1} step={0.05} disabled={ro || !s.overlay.sound}
+          hint={t.voiceHint} />
+        <Toggle label={t.sound} checked={s.overlay.sound} disabled={ro}
+          onChange={(v) => change({ overlay: { sound: v } })} hint={t.soundHint} />
+        <Range label={t.volume} value={s.overlay.soundVolume} min={0} max={1} step={0.05} disabled={ro || !s.overlay.sound}
           format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => change({ overlay: { soundVolume: v } })} />
         <div className="btns-inline">
-          <button type="button" disabled={!s.overlay.sound} onClick={() => playOverlaySound("open", s.overlay.soundVolume)}>▶ Open sound</button>
-          <button type="button" disabled={!s.overlay.sound} onClick={() => playOverlaySound("close", s.overlay.soundVolume)}>▶ Close sound</button>
+          <button type="button" disabled={!s.overlay.sound} onClick={() => playOverlaySound("open", s.overlay.soundVolume)}>{t.openSound}</button>
+          <button type="button" disabled={!s.overlay.sound} onClick={() => playOverlaySound("close", s.overlay.soundVolume)}>{t.closeSound}</button>
         </div>
-        <p className="muted small">Changes show up in the overlay right away. Move or resize it with Ctrl+Shift+L.</p>
+        <p className="muted small">{t.overlayHint}</p>
       </section>
 
       <section className="panel set-section">
-        <h2>Rank and MMR</h2>
+        <h2>{t.rankMmr}</h2>
         <div className="set-range">
-          <label htmlFor="mmr">Exact MMR (optional)</label>
+          <label htmlFor="mmr">{t.exactMmr}</label>
           <input id="mmr" type="number" inputMode="numeric" min={0} max={15000} step={1} disabled={ro}
-            value={s.rank.mmr ?? ""} placeholder="Automatic"
+            value={s.rank.mmr ?? ""} placeholder={t.automatic}
             onChange={(e) => change({ rank: { mmr: e.target.value === "" ? null : Number(e.target.value) } })} />
         </div>
         <p className="muted small">
-          Leave empty to collect it automatically (OpenDota's estimate from your ranked matches, refreshed after games).
-          Dota only shows the exact number on your own profile, so type it here if you want exact figures.
+          {t.mmrHint1} {t.mmrHint2}
         </p>
-        <Toggle label="Update MMR after each game" checked={s.rank.autoAdjust} disabled={ro}
+        <Toggle label={t.autoAdjust} checked={s.rank.autoAdjust} disabled={ro}
           onChange={(v) => change({ rank: { autoAdjust: v } })}
-          hint="Wins add, losses subtract. The game can't tell ranked from unranked, so use Undo on the rank card after a normal or turbo game." />
-        <Range label="MMR per game" value={s.rank.perGame} min={5} max={60} step={1} disabled={ro}
+          hint={t.autoAdjustHint} />
+        <Range label={t.perGame} value={s.rank.perGame} min={5} max={60} step={1} disabled={ro}
           format={(v) => `±${v}`} onChange={(v) => change({ rank: { perGame: v } })} />
       </section>
 
       <section className="panel set-section">
-        <h2>Draft</h2>
+        <h2>{t.draft}</h2>
         <div className="set-range">
-          <label htmlFor="position">My position</label>
+          <label htmlFor="position">{t.myPosition}</label>
           <select id="position" disabled={ro} value={s.draft.position}
             onChange={(e) => change({ draft: { position: Number(e.target.value) as SettingsT["draft"]["position"] } })}>
-            <option value={1}>1 · Carry (safe lane)</option>
-            <option value={2}>2 · Mid</option>
-            <option value={3}>3 · Offlane</option>
-            <option value={4}>4 · Soft support</option>
-            <option value={5}>5 · Hard support</option>
-            <option value={0}>Any position</option>
+            <option value={1}>{t.pos1}</option>
+            <option value={2}>{t.pos2}</option>
+            <option value={3}>{t.pos3}</option>
+            <option value={4}>{t.pos4}</option>
+            <option value={5}>{t.pos5}</option>
+            <option value={0}>{t.pos0}</option>
           </select>
         </div>
-        <p className="muted small">Pick suggestions before your hero is locked in fit this position and counter the enemy picks you add.</p>
+        <p className="muted small">{t.draftHint}</p>
       </section>
 
       <section className="panel set-section">
-        <h2>Enemy auto-detection</h2>
-        <Toggle label="Detect enemy heroes from the top bar" checked={s.detection.enabled} disabled={ro}
+        <h2>{t.detection}</h2>
+        <Toggle label={t.detect} checked={s.detection.enabled} disabled={ro}
           onChange={(v) => change({ detection: { enabled: v } })}
-          hint="Needs the overlay running and a one-time setup from its tray menu (Set up enemy detection…)" />
+          hint={t.detectHint} />
       </section>
 
       <section className="panel set-section">
-        <h2>Match players</h2>
-        <Toggle label="Show enemy players' rank, win rate and heroes" checked={s.matchInfo.enabled} disabled={ro}
+        <h2>{t.matchPlayers}</h2>
+        <Toggle label={t.matchInfo} checked={s.matchInfo.enabled} disabled={ro}
           onChange={(v) => change({ matchInfo: { enabled: v } })}
-          hint="Reads player IDs from Dota's server_log.txt. Current Dota clients stopped writing that file in 2022, so this usually stays empty." />
+          hint={t.matchInfoHint} />
         <div className="set-range">
-          <label htmlFor="log-path">server_log.txt path</label>
+          <label htmlFor="log-path">{t.logPath}</label>
           <input id="log-path" type="text" spellCheck={false} disabled={ro} value={s.matchInfo.logPath}
-            placeholder="Auto-detect from Steam libraries" maxLength={1000}
+            placeholder={t.logPathPlaceholder} maxLength={1000}
             onChange={(e) => change({ matchInfo: { logPath: e.target.value } })} />
         </div>
       </section>
 
       {!ro && (
         <footer className="set-foot">
-          <button onClick={reset}>Reset to defaults</button>
+          <button onClick={reset}>{t.reset}</button>
         </footer>
       )}
     </div>

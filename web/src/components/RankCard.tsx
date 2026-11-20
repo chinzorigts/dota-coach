@@ -1,26 +1,18 @@
 import { post } from "../useCoach";
 import type { RankView } from "../types";
+import { useT, type Strings } from "../i18n";
 
-const SOURCE_NOTE: Record<RankView["source"], string> = {
-  mmr: "MMR you entered in Settings.",
-  estimate: "Collected automatically: OpenDota's estimate from your recent ranked matches.",
-  medal: "Collected automatically: middle of your medal's range (OpenDota has no finer estimate yet).",
-  none: "",
-};
-
-const gap = (t: NonNullable<RankView["nextStar"]>, approx: boolean) =>
-  `${approx ? "≈" : ""}${t.remaining} MMR · ~${t.wins} win${t.wins === 1 ? "" : "s"}`;
+const gap = (t: NonNullable<RankView["nextStar"]>, approx: boolean, T: Strings) =>
+  `${approx ? "≈" : ""}${t.remaining} MMR · ${T.winsNeeded(t.wins)}`;
 
 /** Dashboard card: medal, MMR, progress through the current star and what's left to the next star / medal */
 export function RankCard({ rank }: { rank: RankView }) {
+  const T = useT();
   if (rank.source === "none") {
     return (
       <div className="panel rank">
-        <h2>Rank</h2>
-        <p className="muted">
-          Collected automatically once Dota sends your account (join any game). Needs "Expose Public Match Data" on in
-          Dota's settings so OpenDota can see your matches.
-        </p>
+        <h2>{T.rank}</h2>
+        <p className="muted">{T.rankNone}</p>
       </div>
     );
   }
@@ -29,31 +21,31 @@ export function RankCard({ rank }: { rank: RankView }) {
     <div className="panel rank">
       <div className="rank-head">
         <h2>{rank.label}</h2>
-        {rank.mmr !== null && <span className="rank-mmr">{approx ? "≈" : ""}{rank.mmr.toLocaleString("en-US")} MMR</span>}
+        {rank.mmr !== null && <span className="rank-mmr">{approx ? "≈" : ""}{rank.mmr.toLocaleString(T.locale)} MMR</span>}
       </div>
       {rank.progress !== null && (
-        <div className="rank-bar" role="meter" aria-valuenow={Math.round(rank.progress * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Progress to the next star">
+        <div className="rank-bar" role="meter" aria-valuenow={Math.round(rank.progress * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={T.progressNextStar}>
           <span style={{ width: `${Math.round(rank.progress * 100)}%` }} />
         </div>
       )}
       <dl className="rank-next">
         {rank.nextStar && (
-          <div><dt>Next: {rank.nextStar.label}</dt><dd>{gap(rank.nextStar, approx)}</dd></div>
+          <div><dt>{T.nextStar(rank.nextStar.label)}</dt><dd>{gap(rank.nextStar, approx, T)}</dd></div>
         )}
         {rank.nextMedal && (
-          <div><dt>Next medal: {rank.nextMedal.label}</dt><dd>{gap(rank.nextMedal, approx)}</dd></div>
+          <div><dt>{T.nextMedal(rank.nextMedal.label)}</dt><dd>{gap(rank.nextMedal, approx, T)}</dd></div>
         )}
-        {!rank.nextStar && <div><dt>Top tier</dt><dd>Immortal is ranked by leaderboard</dd></div>}
+        {!rank.nextStar && <div><dt>{T.topTier}</dt><dd>{T.immortalLeaderboard}</dd></div>}
       </dl>
       {rank.lastChange && (
         <p className="rank-last">
-          Last game {rank.lastChange.delta > 0 ? "+" : ""}{rank.lastChange.delta}
-          <button type="button" className="link" onClick={() => post("/api/rank/undo", {})}>Undo (unranked game)</button>
+          {T.lastGame}{rank.lastChange.delta > 0 ? "+" : ""}{rank.lastChange.delta}
+          <button type="button" className="link" onClick={() => post("/api/rank/undo", {})}>{T.undoUnranked}</button>
         </p>
       )}
       <p className="cmp-note">
-        {SOURCE_NOTE[rank.source]} Medal bands are community estimates; ±{rank.perGame} per game.
-        {rank.openDotaLabel && rank.openDotaLabel !== rank.label && ` OpenDota medal: ${rank.openDotaLabel}.`}
+        {T.rankSource[rank.source]}{T.medalBands(rank.perGame)}
+        {rank.openDotaLabel && rank.openDotaLabel !== rank.label && T.openDotaMedal(rank.openDotaLabel)}
       </p>
     </div>
   );

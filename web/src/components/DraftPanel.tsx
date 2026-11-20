@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DraftView, HeroListItem, Position } from "../types";
 import { Img } from "./Img";
 import { post } from "../useCoach";
+import { useT } from "../i18n";
 
 export const POSITION_LABELS: Record<Position, string> = {
   0: "Any",
@@ -21,11 +22,12 @@ export function setPosition(position: Position) {
 }
 
 function PositionPicker({ value }: { value: Position }) {
+  const t = useT();
   return (
-    <div className="draft-pos" role="radiogroup" aria-label="My position">
+    <div className="draft-pos" role="radiogroup" aria-label={t.myPosition}>
       {([1, 2, 3, 4, 5, 0] as Position[]).map((p) => (
         <button key={p} type="button" role="radio" aria-checked={value === p} className={value === p ? "on" : ""} onClick={() => setPosition(p)}>
-          {POSITION_LABELS[p]}
+          {t.positions[p]}
         </button>
       ))}
     </div>
@@ -34,6 +36,7 @@ function PositionPicker({ value }: { value: Position }) {
 
 /** Enemy picks typed in during the draft (GSI usually doesn't send them while playing) */
 function EnemyInput({ enemies }: { enemies: string[] }) {
+  const T = useT();
   const [heroes, setHeroes] = useState<HeroListItem[]>([]);
   const [q, setQ] = useState("");
   useEffect(() => {
@@ -56,13 +59,13 @@ function EnemyInput({ enemies }: { enemies: string[] }) {
           <li key={e}>
             {byName.get(e) && <Img src={byName.get(e)!.icon} label={byName.get(e)!.localizedName} width={20} height={20} />}
             {byName.get(e)?.localizedName ?? e}
-            <button type="button" aria-label={`Remove ${byName.get(e)?.localizedName ?? e}`} onClick={() => save(enemies.filter((x) => x !== e))}>×</button>
+            <button type="button" aria-label={T.remove(byName.get(e)?.localizedName ?? e)} onClick={() => save(enemies.filter((x) => x !== e))}>×</button>
           </li>
         ))}
       </ul>
       {enemies.length < 5 && (
         <div className="picker">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Add an enemy pick" aria-label="Search enemy heroes"
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={T.addEnemyPick} aria-label={T.searchEnemies}
             onKeyDown={(e) => { if (e.key === "Enter" && matches[0]) add(matches[0].name); }} />
           {matches.length > 0 && (
             <ul className="suggest" role="listbox">
@@ -81,18 +84,19 @@ function EnemyInput({ enemies }: { enemies: string[] }) {
 }
 
 function Suggestion({ s, compact }: { s: DraftView["suggestions"][number]; compact?: boolean }) {
+  const t = useT();
   const top = s.reasons[0];
   return (
     <li className="draft-sug">
       <Img src={s.icon} label={s.name} width={compact ? 22 : 28} height={compact ? 22 : 28} />
       <div>
         <strong>{s.name}</strong>
-        {!compact && s.winRate !== null && <small> {s.winRate}% win</small>}
+        {!compact && s.winRate !== null && <small> {t.winPct(s.winRate)}</small>}
         {top ? (
           <small className={top.advantage >= 0 ? "pos" : "neg"}>
             {compact ? " " : <br />}
-            {top.advantage >= 0 ? "+" : ""}{top.advantage}% vs {top.enemy}
-            {!compact && s.reasons.length > 1 && `, ${s.reasons.slice(1).map((r) => `${r.advantage >= 0 ? "+" : ""}${r.advantage}% vs ${r.enemy}`).join(", ")}`}
+            {t.vs(`${top.advantage >= 0 ? "+" : ""}${top.advantage}`, top.enemy)}
+            {!compact && s.reasons.length > 1 && `, ${s.reasons.slice(1).map((r) => t.vs(`${r.advantage >= 0 ? "+" : ""}${r.advantage}`, r.enemy)).join(", ")}`}
           </small>
         ) : null}
       </div>
@@ -102,15 +106,16 @@ function Suggestion({ s, compact }: { s: DraftView["suggestions"][number]; compa
 
 /** Dashboard, before your hero is locked in */
 export function DraftPanel({ draft }: { draft: DraftView }) {
+  const t = useT();
   return (
     <div className="panel draft">
-      <h2>Pick suggestions</h2>
+      <h2>{t.pickSuggestions}</h2>
       <PositionPicker value={draft.position} />
       <EnemyInput enemies={draft.enemies} />
       {draft.status === "no-data" ? (
-        <p className="muted">Hero stats couldn't be loaded from OpenDota (offline?).</p>
+        <p className="muted">{t.draftNoData}</p>
       ) : draft.suggestions.length === 0 ? (
-        <p className="muted">{draft.status === "loading" ? "Loading hero stats…" : "No suggestions for this position."}</p>
+        <p className="muted">{draft.status === "loading" ? t.draftLoading : t.draftNone}</p>
       ) : (
         <ol className="draft-list">
           {draft.suggestions.map((s) => <Suggestion key={s.hero} s={s} />)}
@@ -118,9 +123,9 @@ export function DraftPanel({ draft }: { draft: DraftView }) {
       )}
       <p className="cmp-note">
         {draft.enemies.length
-          ? "Ranked by head-to-head advantage over the enemy picks (like Dotabuff's Advantage), then win rate"
-          : "Add enemy picks for counters. Until then: best win rate"}
-        {draft.bracket ? " in your medal bracket." : "."} Position fit comes from hero roles.
+          ? t.draftByAdvantage
+          : t.draftByWinRate}
+        {draft.bracket ? t.draftBracket : "."}{t.draftFit}
       </p>
     </div>
   );

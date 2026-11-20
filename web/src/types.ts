@@ -80,6 +80,7 @@ export interface CoachState {
   rank: RankView;
   recentGames: RecentGames | null;
   review: Review | null;
+  reviewHistory?: Review[];
   reviewStatus: "idle" | "pending" | "failed";
   draft: DraftView | null;
   match: MatchInfo | null;
@@ -89,7 +90,22 @@ export interface CoachState {
   apiKey: ApiKeyStatus;
   popularitySource: "opendota" | "default";
   names: { abilities: Record<string, string>; items: Record<string, string> };
+  aiUsage?: AiUsage;
   ai: { enabled: boolean; model: string; pending: AiAdvice["reason"] | null; error: string | null; advice: AiAdvice | null; lastMs?: number };
+}
+
+export interface UsageTotals {
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  usd: number;
+  byKind: Partial<Record<"advice" | "review" | "vision", number>>;
+}
+
+export interface AiUsage {
+  match: UsageTotals;
+  session: UsageTotals;
+  priced: boolean;
 }
 
 export interface Settings {
@@ -126,6 +142,7 @@ export interface Review {
   good: string[];
   improve: string[];
   at: number;
+  stats?: { gpm: number; xpm: number; lastHits: number; deaths: number; behind: number; ahead: number };
 }
 
 // Keep in sync with CoachState.recentGames() in server/src/state.ts

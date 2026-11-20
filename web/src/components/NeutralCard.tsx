@@ -1,16 +1,18 @@
 import type { NeutralView } from "../types";
 import { Img } from "./Img";
 import { clock, itemImg } from "../format";
+import { useT } from "../i18n";
 
 /** Dashboard: the neutral tier open now, what you hold, and the pick for it */
 export function NeutralCard({ n, aiOn }: { n: NeutralView; aiOn: boolean }) {
+  const t = useT();
   return (
     <div className="panel neutral">
       <h3>
-        Neutral item
+        {t.neutralItem}
         <span className="sub">
-          {n.tier ? `Tier ${n.tier}` : "No tier yet"}
-          {n.nextTierAt !== null && ` · tier ${n.tier + 1} at ${clock(n.nextTierAt)}`}
+          {n.tier ? t.tier(n.tier) : t.noTier}
+          {n.nextTierAt !== null && t.nextTierAt(n.tier + 1, clock(n.nextTierAt))}
         </span>
       </h3>
       {n.pick ? (
@@ -18,21 +20,21 @@ export function NeutralCard({ n, aiOn }: { n: NeutralView; aiOn: boolean }) {
           <Img src={itemImg(n.pick.key)} label={n.pick.name} width={44} height={32} />
           <div>
             <strong>{n.pick.name}</strong>
-            <span className="tag">{n.pick.held ? "You have it" : "Pick this"}</span>
+            <span className="tag">{n.pick.held ? t.youHaveIt : t.pickThis}</span>
             {n.pick.reason && <p>{n.pick.reason}</p>}
           </div>
         </div>
       ) : (
         <p className="muted">
           {n.tier === 0
-            ? "Tier 1 opens at 5:00."
+            ? t.tier1Opens
             : aiOn
-              ? "Picking from this tier on the next AI read…"
-              : "Turn on AI advice for a pick. This tier's options are below."}
+              ? t.neutralPicking
+              : t.neutralTurnOnAi}
         </p>
       )}
       {n.holding && !n.pick?.held && (
-        <p className="neutral-holding">Holding: {n.holding.name}{n.holding.tier ? ` (tier ${n.holding.tier})` : ""}</p>
+        <p className="neutral-holding">{t.holding(n.holding.name, n.holding.tier)}</p>
       )}
       {n.tier > 0 && !n.pick && (
         <div className="neutral-options">

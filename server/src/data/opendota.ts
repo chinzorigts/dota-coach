@@ -448,6 +448,47 @@ export function getMatchups(heroId: number): Promise<Matchups | null> {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Which lane a hero is played in (public matches): /scenarios/laneRoles?hero_id=N gives games per lane role
+// (1 safe, 2 mid, 3 off, 4 jungle) split by game length. Summed into shares; changes slowly, so cached a week.
+
+export interface LaneShares {
+  games: number;
+  /** Share of games per lane role, 1..4 */
+  share: Record<1 | 2 | 3 | 4, number>;
+}
+
+export function parseLaneRoles(raw: unknown): LaneShares | null {
+  if (!Array.isArray(raw)) return null;
+  const games: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  for (const r of raw as { lane_role?: unknown; games?: unknown }[]) {
+    const lane = Number(r?.lane_role);
+    const g = Number(r?.games);
+    if (lane >= 1 && lane <= 4 && Number.isFinite(g)) games[lane] += g;
+  }
+  const total = games[1] + games[2] + games[3] + games[4];
+  if (total <= 0) return null;
+  return { games: total, share: { 1: games[1] / total, 2: games[2] / total, 3: games[3] / total, 4: games[4] / total } };
+}
+
+const LANE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const laneMemo = new Map<number, Promise<LaneShares | null>>();
+
+export function getLaneRoles(heroId: number): Promise<LaneShares | null> {
+  let p = laneMemo.get(heroId);
+  if (!p) {
+    p = cachedJson(path.join(config.cacheDir, `lanes-${heroId}.json`), LANE_TTL_MS, () => getJson(`/scenarios/laneRoles?hero_id=${heroId}`))
+      .then(parseLaneRoles)
+      .catch((err) => {
+        console.warn(`[opendota] lane roles for hero ${heroId} failed:`, (err as Error).message);
+        return null;
+      });
+    laneMemo.set(heroId, p);
+    p.then((v) => v === null && laneMemo.delete(heroId));
+  }
+  return p;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Your last few matches (hero, result, K/D/A, GPM/XPM, length) from /players/:id/recentMatches.
 // That endpoint is slow (~12s) and sometimes 500s, so results are cached for a few minutes.
 

@@ -6,6 +6,7 @@
 // wrong enemy would produce wrong counter-item advice. Confident answers are saved as extra templates
 // (see templates.ts), so the same cosmetic is matched locally, for free, from then on.
 import Anthropic from "@anthropic-ai/sdk";
+import { recordUsage } from "../ai/usage.js";
 import { allHeroes } from "../data/constants.js";
 
 /** One hero key (npc_dota_hero_*) per image, or null when unknown/unsure */
@@ -66,6 +67,7 @@ export const identifyPortraits: PortraitIdentifier = async (pngs, { model, apiKe
       },
     ],
   });
+  recordUsage("vision", model, res.usage);
   const text = res.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
   return parseIdentification(text, pngs.length);
 };

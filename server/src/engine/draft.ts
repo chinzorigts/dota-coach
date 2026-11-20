@@ -7,7 +7,7 @@
 // Head-to-head samples are small, so each advantage is shrunk towards 0 by games / (games + SHRINK).
 // Base win rates come from your medal bracket when OpenDota knows it.
 import type { HeroInfo } from "../data/constants.js";
-import type { HeroStat, Matchups } from "../data/opendota.js";
+import type { HeroStat, LaneShares, Matchups } from "../data/opendota.js";
 import type { Position } from "../settings.js";
 
 const SHRINK = 150;
@@ -58,6 +58,24 @@ export function positionFit(roles: string[], position: Position): number {
   return Math.max(0, Math.min(1, fit));
 }
 
+/** Lane role each position plays in: 1 safe lane (pos 1 and 5), 2 mid, 3 off lane (pos 3 and 4) */
+const POSITION_LANE: Record<Exclude<Position, 0>, 1 | 2 | 3> = { 1: 1, 2: 2, 3: 3, 4: 3, 5: 1 };
+/** Below this share of games in the position's lane, the hero isn't really played there */
+const MIN_LANE_SHARE = 0.08;
+const MIN_LANE_GAMES = 200;
+
+/**
+ * Role tags only say what a hero can do; where people actually play it is the better guide (Lina is tagged
+ * Support and Carry but lives in mid). Blends the tag fit with the share of games in the position's lane.
+ * Returns the tag fit unchanged without lane data, and 0 when the hero is almost never played in that lane.
+ */
+export function laneAdjustedFit(tagFit: number, lanes: LaneShares | undefined, position: Position): number {
+  if (position === 0 || !lanes || lanes.games < MIN_LANE_GAMES) return tagFit;
+  const share = lanes.share[POSITION_LANE[position]];
+  if (share < MIN_LANE_SHARE) return 0;
+  return Math.round(Math.min(1, tagFit * 0.6 + Math.min(1, share / 0.5) * 0.4) * 100) / 100;
+}
+
 function baseWinRate(stat: HeroStat | undefined, bracket: number | null): number {
   if (!stat) return 0.5;
   const b = bracket ? stat.byBracket[bracket] : undefined;
@@ -86,6 +104,8 @@ export function suggestPicks(opts: {
   bracket: number | null;
   stats: Map<number, HeroStat>;
   matchups: Map<number, Matchups>; // by enemy hero id
+  /** Lane shares by hero id, for the heroes loaded so far */
+  lanes?: Map<number, LaneShares>;
   limit?: number;
 }): PickSuggestion[] {
   const { heroes, enemies, taken, position, bracket, stats, matchups } = opts;
@@ -95,8 +115,10 @@ export function suggestPicks(opts: {
   const out: PickSuggestion[] = [];
   for (const h of heroes) {
     if (taken.has(h.id)) continue;
-    const fit = positionFit(h.roles, position);
-    if (fit < 0.5) continue;
+    const tagFit = positionFit(h.roles, position);
+    if (tagFit < 0.5) continue;
+    const fit = laneAdjustedFit(tagFit, opts.lanes?.get(h.id), position);
+    if (fit < 0.4) continue;
     const stat = stats.get(h.id);
     if (stat && stat.picks < pickFloor) continue;
     const base = baseWinRate(stat, bracket);

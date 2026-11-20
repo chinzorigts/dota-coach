@@ -1,40 +1,42 @@
 import type { BenchmarkView, StatRow } from "../types";
+import { useT, type Strings } from "../i18n";
 
 // Big counts read better whole (117 last hits, not 117.1); small ones keep a decimal (2.4 kills)
 const fmt = (v: number | null, key: StatRow["key"]) =>
   v === null ? "–" : key === "gpm" || key === "xpm" || Math.abs(v) >= 10 ? String(Math.round(v)) : String(Math.round(v * 10) / 10);
 
-const VERDICT_LABEL = { good: "Ahead", ok: "On pace", bad: "Behind" } as const;
-
 function Verdict({ v }: { v: StatRow["verdict"] }) {
+  const t = useT();
   if (!v) return <span className="cmp-v none" aria-hidden>·</span>;
-  return <span className={`cmp-v ${v}`}>{VERDICT_LABEL[v]}</span>;
+  return <span className={`cmp-v ${v}`}>{t.verdict[v]}</span>;
 }
 
 /** Percentile among everyone who played the hero, as a thin bar with a median tick */
 function PctBar({ pct, better }: { pct: number; better: "higher" | "lower" }) {
+  const t = useT();
   const shown = better === "higher" ? pct : 100 - pct;
   return (
-    <span className="cmp-pct" role="meter" aria-valuenow={shown} aria-valuemin={0} aria-valuemax={100} aria-label={`Top ${100 - shown}% of players on this hero`}>
+    <span className="cmp-pct" role="meter" aria-valuenow={shown} aria-valuemin={0} aria-valuemax={100} aria-label={t.topPct(100 - shown)}>
       <span style={{ width: `${shown}%` }} />
       <i aria-hidden />
     </span>
   );
 }
 
-function sourceNote(b: BenchmarkView): string {
+function sourceNote(b: BenchmarkView, t: Strings): string {
   const parts: string[] = [];
-  if (b.hero === "ok") parts.push("Hero: median of all public matches of this hero (OpenDota)");
-  else if (b.hero === "loading") parts.push("Loading hero averages…");
-  else parts.push("Hero averages unavailable (offline?)");
-  if (b.personal === "ok") parts.push(`Mine: your ${b.personalGames} games on this hero`);
-  else if (b.personal === "loading") parts.push("Loading your history…");
-  else parts.push("Your avg needs a public profile with 3+ games on this hero");
+  if (b.hero === "ok") parts.push(t.srcHeroOk);
+  else if (b.hero === "loading") parts.push(t.srcHeroLoading);
+  else parts.push(t.srcHeroNone);
+  if (b.personal === "ok") parts.push(t.srcMineOk(b.personalGames));
+  else if (b.personal === "loading") parts.push(t.srcMineLoading);
+  else parts.push(t.srcMineNone);
   return parts.join(" · ");
 }
 
 /** Dashboard: your live numbers next to the hero average and your own average at this minute */
 export function StatsCompare({ b }: { b: BenchmarkView }) {
+  const t = useT();
   // The hero column is narrow: drop columns that would only show dashes
   const hasHero = b.rows.some((r) => r.heroMedian !== null);
   const hasMine = b.rows.some((r) => r.personal !== null);
@@ -42,24 +44,24 @@ export function StatsCompare({ b }: { b: BenchmarkView }) {
   return (
     <div className="panel cmp">
       <div className="cmp-head">
-        <h2>You vs average</h2>
+        <h2>{t.youVsAvg}</h2>
         <span>
-          at {b.minute}:00{b.killParticipation !== null && <> · KP <b>{b.killParticipation}%</b></>}
+          {t.atMinute(b.minute)}{b.killParticipation !== null && <> · KP <b>{b.killParticipation}%</b></>}
         </span>
       </div>
       {b.rows.length === 0 ? (
-        <p className="muted">{b.minute < 2 ? "Comparisons start at 2:00." : sourceNote(b)}</p>
+        <p className="muted">{b.minute < 2 ? t.cmpStart : sourceNote(b, t)}</p>
       ) : (
         <>
-          {b.early && <p className="cmp-early">Early game: GPM/XPM climb over the match, so verdicts wait until 10:00.</p>}
+          {b.early && <p className="cmp-early">{t.cmpEarly}</p>}
           <table className="cmp-table">
             <thead>
               <tr>
-                <th scope="col">Stat</th><th scope="col">You</th>
-                {hasHero && <th scope="col">Hero</th>}
-                {hasMine && <th scope="col">Mine</th>}
-                {hasPct && <th scope="col"><span className="sr-only">Percentile</span></th>}
-                <th scope="col"><span className="sr-only">Verdict</span></th>
+                <th scope="col">{t.colStat}</th><th scope="col">{t.colYou}</th>
+                {hasHero && <th scope="col">{t.colHero}</th>}
+                {hasMine && <th scope="col">{t.colMine}</th>}
+                {hasPct && <th scope="col"><span className="sr-only">{t.colPercentile}</span></th>}
+                <th scope="col"><span className="sr-only">{t.colVerdict}</span></th>
               </tr>
             </thead>
             <tbody>
@@ -75,7 +77,7 @@ export function StatsCompare({ b }: { b: BenchmarkView }) {
               ))}
             </tbody>
           </table>
-          <p className="cmp-note">{sourceNote(b)}. Counts are what the average player has by this minute.</p>
+          <p className="cmp-note">{sourceNote(b, t)}{t.cmpCounts}</p>
         </>
       )}
     </div>

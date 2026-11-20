@@ -5,6 +5,7 @@ import {
   getHeroBenchmarks,
   getHeroStats,
   getItemPopularity,
+  getLaneRoles,
   getMatchups,
   getPlayerHeroTotals,
   getPlayerSummary,
@@ -13,6 +14,7 @@ import {
   type HeroBenchmarks,
   type HeroStat,
   type ItemPopularity,
+  type LaneShares,
   type Matchups,
   type PlayerHeroTotals,
   type PlayerSummary,
@@ -21,8 +23,10 @@ import { compareStats } from "./engine/benchmarks.js";
 import { bandForMmr, gameResultDelta, rankView, type RankView } from "./engine/rank.js";
 import { suggestPicks, type DraftView } from "./engine/draft.js";
 import { classifyPurchase, newItems, type Purchase } from "./engine/purchases.js";
-import { callReview, type Review, type ReviewCaller } from "./ai/review.js";
+import { callReview, REVIEW_HISTORY, type Review, type ReviewCaller } from "./ai/review.js";
+import { resetMatchUsage, usageView } from "./ai/usage.js";
 import { ownedItems } from "./engine/items.js";
+import { MatchRecorder } from "./matchlog/recorder.js";
 
 /**
  * Dota sends GSI at least every 30s while it runs (the cfg's heartbeat). Nothing for this long means the game was
@@ -60,9 +64,9 @@ import type { RGBImage } from "./vision/image.js";
 import type { TemplateBank } from "./vision/matcher.js";
 import { getTemplateBank, saveLearnedPortrait } from "./vision/templates.js";
 import { identifyPortraits, type PortraitIdentifier } from "./vision/identify.js";
-import { fromRGBA } from "./vision/image.js";
+import { fromRGBA, toRGBA } from "./vision/image.js";
 import { PNG } from "pngjs";
-import { SettingsStore } from "./settings.js";
+import { SettingsStore, type Position } from "./settings.js";
 
 /** Where the current enemy list came from. Manual always wins; auto sources never overwrite it. */
 export type EnemySource = "none" | "manual" | "gsi" | "vision";
@@ -116,6 +120,13 @@ export class CoachState {
   private visionGrabs = 0;
   private aiVisionTries = 0;
   private identifying = false;
+  /** The latest captured enemy-row portraits (one per slot), kept so a correction you make can be learned */
+  private lastEnemyFrames: RGBImage[] | null = null;
+  /**
+   * What auto-detection had per slot when you first edited the list by hand. Fixing a wrong hero (remove it,
+   * add the right one) or filling the one slot it couldn't read then teaches the matcher that portrait.
+   */
+  private correctionBase: { slots: (string | null)[]; frames: RGBImage[]; learned: Set<number> } | null = null;
   rolePref: RolePref = "auto";
   popularity: ItemPopularity | null = null;
   popularityHero: number | null = null;
@@ -141,6 +152,8 @@ export class CoachState {
   private inTransit: string[] = [];
   /** Post-game debrief of the last finished match. Kept until the next one is reviewed. */
   review: Review | null = null;
+  /** Past debriefs, newest first (the latest is also `review`) */
+  reviews: Review[] = [];
   reviewStatus: "idle" | "pending" | "failed" = "idle";
   /** Replaceable in tests */
   reviewCaller: ReviewCaller = callReview;
@@ -149,7 +162,11 @@ export class CoachState {
   loadRecent: (accountId: number, fresh?: boolean) => Promise<RecentMatch[] | null> = getRecentMatches;
   private recent: { accountId: number; data: RecentMatch[] | null | "loading" } | null = null;
   /** Draft data, loaded on first use. Replaceable in tests. */
-  draftDeps = { loadHeroStats: getHeroStats, loadMatchups: getMatchups };
+  /** Per-match timeline in .data/matches, for checking the coach against real games */
+  recorder: MatchRecorder;
+  draftDeps = { loadHeroStats: getHeroStats, loadMatchups: getMatchups, loadLanes: getLaneRoles };
+  /** Lane shares of draft candidates, fetched for the top few as they show up (see draft()) */
+  private lanes = new Map<number, LaneShares | null | "loading">();
   private heroStats: Map<number, HeroStat> | null | "loading" | undefined;
   private matchups = new Map<number, Matchups | null | "loading">();
   /** Our own OpenDota profile (medal) once GSI has told us who we are */
@@ -165,11 +182,18 @@ export class CoachState {
     private loadTotals: (accountId: number, heroId: number) => Promise<PlayerHeroTotals | null> = getPlayerHeroTotals,
   ) {
     this.rolePref = settings.get().coach.defaultRole;
-    const saved = settings.loadData("review.json") as Review | null;
-    if (saved && typeof saved.summary === "string" && Array.isArray(saved.good) && Array.isArray(saved.improve)) {
-      this.review = saved;
-      this.reviewedMatch = saved.matchId;
-    }
+    this.recorder = new MatchRecorder(settings.dataPath("matches"));
+    const isReview = (r: unknown): r is Review => {
+      const x = r as Review | null;
+      return Boolean(x && typeof x.summary === "string" && Array.isArray(x.good) && Array.isArray(x.improve));
+    };
+    const history = settings.loadData("reviews.json");
+    this.reviews = Array.isArray(history) ? history.filter(isReview).slice(0, REVIEW_HISTORY) : [];
+    // Before the history existed only the last review was saved
+    const saved = settings.loadData("review.json");
+    if (isReview(saved) && !this.reviews.some((r) => r.matchId === saved.matchId)) this.reviews.unshift(saved);
+    this.review = this.reviews[0] ?? null;
+    if (this.review) this.reviewedMatch = this.review.matchId;
     let lastDefaultRole = this.rolePref;
     settings.onChange(() => {
       // A new default role applies right away; the footer buttons still override it for this session
@@ -212,6 +236,9 @@ export class CoachState {
       this.maxSeen.clear();
       this.lastSeenAt.clear();
       this.inTransit = [];
+      this.lastEnemyFrames = null;
+      this.correctionBase = null;
+      resetMatchUsage();
     }
 
     if (snap.hero && snap.hero.id !== this.popularityHero) {
@@ -234,6 +261,17 @@ export class CoachState {
     this.snapshot = snap;
     this.applyGsiLineup(snap);
     this.recompute();
+    try {
+      this.recorder.update(snap, this.report, {
+        enemies: this.enemies,
+        enemySource: this.enemySource,
+        detection: this.detection.calibration,
+        bought,
+        advice: this.advisor.status().advice,
+      });
+    } catch (err) {
+      console.warn("[recorder]", (err as Error).message);
+    }
     if (this.snapshot && this.report) {
       const offPlan = bought.filter((p) => !p.followed);
       // A different buy than suggested changes the plan: ask again now instead of at the next death or 5:00 mark
@@ -389,13 +427,24 @@ export class CoachState {
       purchases: this.purchases.map((x) => ({ item: x.name, at: Math.floor(x.clock / 60) + ":" + String(Math.floor(x.clock % 60)).padStart(2, "0"), followed_recommendation: x.followed })),
       enemies: this.enemies.map((k) => getHero(k)?.localizedName ?? k),
     };
-    const base = { matchId: snap.matchId, hero: payload.hero, won, durationSec: Math.round(snap.clockTime), kda: payload.kda };
+    const rows = bench?.rows ?? [];
+    const stats = {
+      gpm: p.gpm,
+      xpm: p.xpm,
+      lastHits: p.lastHits,
+      deaths: p.deaths,
+      behind: rows.filter((r) => r.verdict === "bad").length,
+      ahead: rows.filter((r) => r.verdict === "good").length,
+    };
+    const base = { matchId: snap.matchId, hero: payload.hero, won, durationSec: Math.round(snap.clockTime), kda: payload.kda, stats };
     this.reviewStatus = "pending";
     this.reviewCaller(payload, { model: ai.model, apiKey: this.settings.resolvedKey(), language: this.settings.get().language })
       .then((text) => {
         this.review = { ...base, ...text, at: Date.now() };
+        this.reviews = [this.review, ...this.reviews.filter((r) => r.matchId !== base.matchId)].slice(0, REVIEW_HISTORY);
         this.reviewStatus = "idle";
         this.settings.saveData("review.json", this.review);
+        this.settings.saveData("reviews.json", this.reviews);
         console.log("[review] match " + base.matchId + " reviewed");
       })
       .catch((err) => {
@@ -644,8 +693,32 @@ export class CoachState {
     return {
       ...base,
       status: stillLoading ? "loading" : "ok",
-      suggestions: suggestPicks({ heroes: allHeroes(), enemies, taken, position, bracket: base.bracket, stats: this.heroStats, matchups: loaded }),
+      suggestions: this.pickWithLanes(enemies, taken, position, base.bracket, this.heroStats, loaded),
     };
+  }
+
+  /**
+   * Suggestions, corrected by where each hero is actually played. Lane data is one request per hero, so it's
+   * fetched only for the current top candidates (cached for a week); the list re-ranks as answers come in.
+   */
+  private pickWithLanes(enemies: HeroInfo[], taken: Set<number>, position: Position, bracket: number | null, stats: Map<number, HeroStat>, matchups: Map<number, Matchups>) {
+    const lanes = new Map<number, LaneShares>();
+    for (const [id, l] of this.lanes) if (l && l !== "loading") lanes.set(id, l);
+    const wide = suggestPicks({ heroes: allHeroes(), enemies, taken, position, bracket, stats, matchups, lanes, limit: 12 });
+    if (position !== 0) {
+      for (const p of wide) {
+        const id = getHero(p.hero)?.id;
+        if (id === undefined || this.lanes.has(id)) continue;
+        this.lanes.set(id, "loading");
+        this.draftDeps.loadLanes(id)
+          .catch(() => null)
+          .then((l) => {
+            this.lanes.set(id, l);
+            this.emit();
+          });
+      }
+    }
+    return wide.slice(0, 6);
   }
 
   benchmark() {
@@ -660,7 +733,12 @@ export class CoachState {
   /** From the UI. Clearing the list hands control back to auto-detection. */
   setEnemies(heroes: string[]) {
     const valid = [...new Set(heroes)].filter((h) => getHero(h)).slice(0, 5);
+    if (valid.length && this.enemySource !== "manual" && this.lastEnemyFrames && this.detection.slots.length === 5) {
+      this.correctionBase = { slots: this.detection.slots.map((s) => s.confirmed), frames: this.lastEnemyFrames, learned: new Set() };
+    }
+    if (valid.length) void this.learnCorrection(valid);
     if (valid.length === 0) {
+      this.correctionBase = null;
       this.detector?.reset();
       this.visionGrabs = 0;
       this.aiVisionTries = 0;
@@ -668,6 +746,37 @@ export class CoachState {
     }
     this.updateEnemies(valid, valid.length ? "manual" : "none");
     this.emit();
+  }
+
+  /**
+   * Pair a hero you added with the portrait slot it must belong to, only when there's exactly one such slot:
+   * the one whose detected hero you removed (a wrong read), or else the one slot detection never filled.
+   */
+  private async learnCorrection(list: string[]) {
+    const base = this.correctionBase;
+    const myHero = this.snapshot?.hero?.name;
+    if (!base) return;
+    const added = list.filter((h) => !base.slots.includes(h) && h !== myHero && ![...base.learned].some((i) => base.slots[i] === h));
+    if (added.length !== 1) return;
+    const open = (pred: (s: string | null, i: number) => boolean) => base.slots.flatMap((s, i) => (!base.learned.has(i) && pred(s, i) ? [i] : []));
+    const wrong = open((s) => s !== null && !list.includes(s));
+    const empty = open((s) => s === null);
+    const slot = wrong.length === 1 ? wrong[0] : wrong.length === 0 && empty.length === 1 ? empty[0] : -1;
+    const frame = base.frames[slot];
+    if (slot < 0 || !frame) return;
+    const hero = added[0];
+    base.learned.add(slot);
+    base.slots[slot] = hero;
+    try {
+      const { bank } = await this.loadBank();
+      bank.add(hero, frame);
+      const png = new PNG({ width: frame.w, height: frame.h });
+      png.data = Buffer.from(toRGBA(frame));
+      await this.persistLearned(hero, PNG.sync.write(png));
+      console.log("[vision] learned your correction: slot " + (slot + 1) + " is " + hero.replace("npc_dota_hero_", ""));
+    } catch (err) {
+      console.warn("[vision] could not learn the correction:", (err as Error).message);
+    }
   }
 
   private updateEnemies(heroes: string[], source: EnemySource) {
@@ -714,6 +823,7 @@ export class CoachState {
       if (bank.size === 0) throw new Error("Hero portraits could not be downloaded (offline?)");
       this.detector ??= new EnemyDetector(bank);
       const res = this.detector.update(frames, s.team, s.hero.name);
+      this.lastEnemyFrames = frames[this.detector.enemySideFor(s.team)].slice(0, 5);
       this.visionGrabs++;
       this.detection = { calibration: res.calibration, slots: res.enemySlots, lastAt: Date.now(), error: null };
       // Only grow the list; a later bad frame never removes a confirmed hero
@@ -818,6 +928,7 @@ export class CoachState {
       rank: this.rank(),
       recentGames: this.recentGames(),
       review: this.review,
+      reviewHistory: this.reviews,
       reviewStatus: this.reviewStatus,
       draft: this.draft(),
       enemies: this.enemies,
@@ -831,6 +942,7 @@ export class CoachState {
       rolePref: this.rolePref,
       popularitySource: this.popularity ? "opendota" : "default",
       ai: this.advisor.status(),
+      aiUsage: usageView(),
       // Display names for the UI (the snapshot only has internal keys)
       names: this.displayNames(),
     };

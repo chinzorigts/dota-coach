@@ -5,6 +5,7 @@ import { spentOnAbilities } from "../engine/skills.js";
 import { neutralTier } from "../engine/neutral.js";
 import type { CoachReport } from "../engine/types.js";
 import { ADVICE_SCHEMA, buildUserPayload, systemPrompt } from "./prompt.js";
+import { recordUsage } from "./usage.js";
 
 export interface AiAdvice {
   summary: string;
@@ -131,6 +132,7 @@ export function makeClaudeCaller(
       system: systemPrompt(language),
       messages: [{ role: "user", content: JSON.stringify(payload) }],
     });
+    recordUsage("advice", model, response.usage);
     if (response.stop_reason === "refusal") {
       throw new Error("The model declined to answer");
     }

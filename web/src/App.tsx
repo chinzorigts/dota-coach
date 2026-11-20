@@ -16,6 +16,7 @@ import { DraftPanel } from "./components/DraftPanel";
 import { NeutralCard } from "./components/NeutralCard";
 import { RecentGames } from "./components/RecentGames";
 import { ReviewCard } from "./components/ReviewCard";
+import { LangContext, strings } from "./i18n";
 
 /** #settings opens the settings screen; plain hash routing keeps it linkable from the server log */
 function useHashRoute() {
@@ -44,6 +45,7 @@ export default function App() {
   const r = state?.report;
 
   return (
+    <LangContext.Provider value={strings(state?.settings.language)}>
     <div className="app">
       <TopBar connected={connected} gsiAge={gsiAge} snapshot={s ?? null} report={r ?? null}
         inSettings={inSettings} noKey={state?.apiKey.source === "none"} />
@@ -56,7 +58,7 @@ export default function App() {
           {state && (
             <main className="grid pregame">
               {(state.review || state.reviewStatus !== "idle") && (
-                <section className="col" style={{ gridColumn: "1 / -1" }}><ReviewCard review={state.review} status={state.reviewStatus} lang={state.settings.language} /></section>
+                <section className="col" style={{ gridColumn: "1 / -1" }}><ReviewCard review={state.review} history={state.reviewHistory} status={state.reviewStatus} lang={state.settings.language} /></section>
               )}
               {state.draft && <section className="col"><DraftPanel draft={state.draft} /></section>}
               <section className="col"><RankCard rank={state.rank} />{state.recentGames && <RecentGames data={state.recentGames} />}</section>
@@ -78,7 +80,7 @@ export default function App() {
               {r.neutral && <NeutralCard n={r.neutral} aiOn={state.ai.enabled} />}
             </section>
             <section className="col col-side">
-              <AiPanel ai={state.ai} names={state.names} clockNow={s.clockTime} />
+              <AiPanel ai={state.ai} names={state.names} clockNow={s.clockTime} usage={state.aiUsage} />
               <Timers timers={r.timers} alerts={r.alerts} />
               <RankCard rank={state.rank} />
               {state.recentGames && <RecentGames data={state.recentGames} />}
@@ -88,5 +90,6 @@ export default function App() {
         </>
       )}
     </div>
+    </LangContext.Provider>
   );
 }

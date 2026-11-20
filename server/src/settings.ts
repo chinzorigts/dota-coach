@@ -206,6 +206,11 @@ export class SettingsStore {
     return this.current;
   }
 
+  /** A folder inside the data dir, or null when settings live in memory (tests) */
+  dataPath(sub: string): string | null {
+    return this.dir ? path.join(this.dir, sub) : null;
+  }
+
   /** Small state files next to settings.json (e.g. rank history). In-memory when there is no data dir. */
   private extra = new Map<string, unknown>();
   loadData(file: string): unknown {

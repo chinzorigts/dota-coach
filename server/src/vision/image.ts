@@ -23,6 +23,18 @@ export function fromRGBA(w: number, h: number, rgba: Uint8Array | Buffer): RGBIm
   return { w, h, data: out };
 }
 
+/** RGB to opaque RGBA, for writing a PNG */
+export function toRGBA(img: RGBImage): Uint8Array {
+  const out = new Uint8Array(img.w * img.h * 4);
+  for (let i = 0, j = 0; j < img.w * img.h * 3; i += 4, j += 3) {
+    out[i] = img.data[j];
+    out[i + 1] = img.data[j + 1];
+    out[i + 2] = img.data[j + 2];
+    out[i + 3] = 255;
+  }
+  return out;
+}
+
 export function crop(img: RGBImage, x: number, y: number, w: number, h: number): RGBImage {
   x = Math.max(0, Math.min(img.w - 1, Math.round(x)));
   y = Math.max(0, Math.min(img.h - 1, Math.round(y)));

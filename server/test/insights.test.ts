@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { normalize } from "../src/gsi/normalize.js";
-import { parseBenchmarks, parseHeroStats, parseHeroTotals, parseMatchups, parsePlayerSummary } from "../src/data/opendota.js";
+import { parseBenchmarks, parseHeroStats, parseHeroTotals, parseLaneRoles, parseMatchups, parsePlayerSummary } from "../src/data/opendota.js";
 import { compareStats, medianOf, percentileOf } from "../src/engine/benchmarks.js";
 import { BANDS, bandForMmr, bandForTier, gameResultDelta, rankView } from "../src/engine/rank.js";
-import { matchupAdvantage, positionFit, suggestPicks } from "../src/engine/draft.js";
+import { laneAdjustedFit, matchupAdvantage, positionFit, suggestPicks } from "../src/engine/draft.js";
 import { getHero } from "../src/data/constants.js";
 import { mergeSettings, defaultSettings, SettingsStore } from "../src/settings.js";
 import { CoachState } from "../src/state.js";
@@ -218,7 +218,7 @@ describe("upcoming skill", () => {
 describe("stale game data", () => {
   it("drops the last game once Dota has been quiet past the heartbeat", () => {
     const state = new CoachState(new Advisor({ runtime: rt(false), call: null }), async () => null, undefined as never, new SettingsStore(null), async () => null, async () => null, async () => null);
-    state.draftDeps = { loadHeroStats: async () => null, loadMatchups: async () => null }; // no network in tests
+    state.draftDeps = { loadHeroStats: async () => null, loadMatchups: async () => null, loadLanes: async () => null }; // no network in tests
     state.ingest(rawGame());
     expect(state.expireIfStale(state.lastGsiAt + 30_000)).toBe(false);
     expect(state.snapshot?.hero).toBeTruthy();
@@ -241,6 +241,18 @@ describe("draft", () => {
     expect(positionFit(cm.roles, 5)).toBeGreaterThanOrEqual(0.5);
     expect(positionFit(axe.roles, 3)).toBeGreaterThanOrEqual(0.5);
     expect(positionFit(cm.roles, 0)).toBe(1);
+  });
+
+  it("corrects the role fit by the lane the hero is actually played in", () => {
+    const lanes = parseLaneRoles([
+      { lane_role: 1, games: "50" }, { lane_role: 2, games: "900" }, { lane_role: 3, games: "50" },
+    ])!;
+    expect(lanes.share[2]).toBeCloseTo(0.9);
+    expect(laneAdjustedFit(0.7, lanes, 2)).toBe(0.82); // 0.7*0.6 + 1*0.4
+    expect(laneAdjustedFit(0.7, lanes, 1)).toBe(0); // 5% safe lane: below the 8% cut-off
+    expect(laneAdjustedFit(0.7, { games: 1000, share: { 1: 0.02, 2: 0.98, 3: 0, 4: 0 } }, 5)).toBe(0);
+    expect(laneAdjustedFit(0.7, undefined, 2)).toBe(0.7);
+    expect(laneAdjustedFit(0.7, { games: 50, share: { 1: 0, 2: 1, 3: 0, 4: 0 } }, 1)).toBe(0.7); // too few games
   });
 
   it("measures head-to-head advantage against what the win rates predict", () => {
@@ -277,7 +289,7 @@ describe("draft", () => {
 describe("bug fixes: skill points, late start, ranked-only MMR", () => {
   const mk = (settings = new SettingsStore(null)) => {
     const state = new CoachState(new Advisor({ runtime: rt(false), call: null }), async () => null, undefined as never, settings, async () => null, async () => null, async () => null);
-    state.draftDeps = { loadHeroStats: async () => null, loadMatchups: async () => null };
+    state.draftDeps = { loadHeroStats: async () => null, loadMatchups: async () => null, loadLanes: async () => null };
     return { state, settings };
   };
 
@@ -373,5 +385,24 @@ describe("Korean output and the post-game review", () => {
     expect(seen[0].payload).toMatchObject({ hero: "Juggernaut", result: "loss", duration: "40 min", kda: "2/0/3" });
     expect(state.review).toMatchObject({ matchId: "900", won: false, summary: "요약", improve: ["데스 줄이기"] });
     expect(state.toJSON().reviewStatus).toBe("idle");
+  });
+});
+
+describe("Invoker", () => {
+  it("levels Quas/Wex/Exort past 4, up to 7", async () => {
+    const { recommendSkill, maxBasicLevel } = await import("../src/engine/skills.js");
+    expect(maxBasicLevel("invoker_exort")).toBe(7);
+    expect(maxBasicLevel("juggernaut_blade_fury")).toBe(4);
+    const raw = rawGame({ hero: "npc_dota_hero_invoker", heroId: 74, level: 12 });
+    // Level 12: Exort 4, Quas 3, Wex 3 + one talent = 11 points, one free; level 12 allows up to level 6
+    raw.abilities = {
+      ability0: { name: "invoker_quas", level: 3 },
+      ability1: { name: "invoker_wex", level: 3 },
+      ability2: { name: "invoker_exort", level: 4 },
+      ability5: { name: "invoker_invoke", level: 1 },
+    };
+    raw.hero!.talent_2 = true; // level 10 talent taken
+    const next = recommendSkill(normalize(raw), ["invoker_exort", "invoker_quas", "invoker_wex"]).next;
+    expect(next?.key).toBe("invoker_exort"); // used to be blocked at 4
   });
 });

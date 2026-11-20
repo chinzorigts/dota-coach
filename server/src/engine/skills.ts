@@ -47,7 +47,12 @@ export function unspentPoints(s: GameSnapshot): number {
 }
 
 export const ultCap = (level: number) => (level >= 18 ? 3 : level >= 12 ? 2 : level >= 6 ? 1 : 0);
-export const basicCap = (level: number) => Math.min(4, Math.ceil(level / 2));
+/** Basic abilities that go past level 4: Invoker's Quas, Wex and Exort reach 7 */
+const SEVEN_LEVELS = new Set(["invoker_quas", "invoker_wex", "invoker_exort"]);
+export const maxBasicLevel = (key: string) => (SEVEN_LEVELS.has(key) ? 7 : 4);
+
+/** Highest level a basic ability can have at this hero level (one more every two levels) */
+export const basicCap = (level: number, max = 4) => Math.min(max, Math.ceil(level / 2));
 
 export function defaultPriority(s: GameSnapshot): string[] {
   return levelableAbilities(s)
@@ -137,7 +142,7 @@ function recommendSkillAt(
   if (aiBuild) {
     const key = aiBuild.build[spentOnAbilities(s) - aiBuild.base];
     const a = key ? abilities.find((x) => x.name === key) : undefined;
-    if (a && !a.ultimate && a.level < Math.min(4, basicCap(hero.level))) {
+    if (a && !a.ultimate && a.level < basicCap(hero.level, maxBasicLevel(a.name))) {
       return { next: { kind: "ability", key: a.name, name: getAbility(a.name).name, reason: `AI build for this game, to level ${a.level + 1}` } };
     }
   }
@@ -163,10 +168,9 @@ function recommendSkillAt(
   }
 
   // 3) Basic abilities: by priority, within the level cap
-  const cap = basicCap(hero.level);
   for (const key of priority) {
     const a = abilities.find((x) => x.name === key);
-    if (a && a.level < cap && a.level < 4) {
+    if (a && a.level < basicCap(hero.level, maxBasicLevel(a.name))) {
       const rank = priority.indexOf(key) + 1;
       return {
         next: {

@@ -1,8 +1,10 @@
 import type { Report, Snapshot } from "../types";
 import { Img } from "./Img";
 import { abilityImg } from "../format";
+import { useT } from "../i18n";
 
 export function SkillPanel({ snapshot, report, names }: { snapshot: Snapshot; report: Report; names: { abilities: Record<string, string> } }) {
+  const t = useT();
   const next = report.skills.next;
   const order = report.skills.priority;
   // Innate abilities can't be leveled; the priority list holds the levelable basic abilities
@@ -11,8 +13,8 @@ export function SkillPanel({ snapshot, report, names }: { snapshot: Snapshot; re
   return (
     <div className="panel">
       <h3>
-        Skills
-        <span className="sub">{report.skills.prioritySource === "ai" ? "AI priority" : "Default priority"}</span>
+        {t.skills}
+        <span className="sub">{report.skills.prioritySource === "ai" ? t.aiPriority : t.defaultPriority}</span>
       </h3>
       <ul className="skills">
         {abilities.map((a) => {
@@ -23,18 +25,18 @@ export function SkillPanel({ snapshot, report, names }: { snapshot: Snapshot; re
               <Img src={abilityImg(a.name)} label={names.abilities[a.name] ?? a.name} width={40} height={40} />
               <div>
                 <strong>{names.abilities[a.name]}</strong>
-                <div className="pips" aria-label={`Level ${a.level} of ${max}`}>
+                <div className="pips" aria-label={t.levelOf(a.level, max)}>
                   {Array.from({ length: max }, (_, i) => <i key={i} className={i < a.level ? "on" : ""} />)}
                 </div>
               </div>
-              <span className="rank">{a.ultimate ? "Ult" : rank >= 0 ? `#${rank + 1}` : ""}</span>
+              <span className="rank">{a.ultimate ? t.ult : rank >= 0 ? `#${rank + 1}` : ""}</span>
             </li>
           );
         })}
       </ul>
       {!next && report.skills.upcoming && (
         <p className="skill-upcoming">
-          At level {report.skills.upcoming.atLevel}: <strong>{names.abilities[report.skills.upcoming.key] ?? report.skills.upcoming.name}</strong>
+          {t.atLevel(report.skills.upcoming.atLevel)}<strong>{names.abilities[report.skills.upcoming.key] ?? report.skills.upcoming.name}</strong>
           {report.skills.upcoming.options?.length ? ` (${report.skills.upcoming.options.map((o) => o.name).join(" / ")})` : ""}
         </p>
       )}

@@ -106,3 +106,31 @@ describe("vision over HTTP", () => {
     expect(state.enemySource).toBe("none");
   });
 });
+
+describe("Learning from your corrections", () => {
+  it("teaches the matcher a portrait when you replace a wrong hero", async () => {
+    const own = new TemplateBank();
+    for (const [h, img] of ART) own.add(h, img);
+    const advisor = new Advisor({ runtime: rt(false), call: null });
+    const state = new CoachState(advisor, async () => null, async () => ({ bank: own }));
+    const learned: string[] = [];
+    state.persistLearned = async (hero) => void learned.push(hero);
+    state.ingest(rawGame({ matchId: "900" }));
+    // Slot 3 shows Slark's art; you know it's really Tinker (say, a persona the matcher mistook)
+    const seen = [FOES[0], FOES[1], "npc_dota_hero_slark", FOES[3], FOES[4]];
+    const frames = (f: number) => ({
+      radiant: ALLIES.map((h, i) => captured(ART.get(h)!, f * 10 + i)),
+      dire: seen.map((h, i) => captured(ART.get(h)!, f * 10 + i)),
+    });
+    for (let f = 1; f <= MIN_STREAK; f++) await state.ingestVision(frames(f));
+    expect(state.enemies).toContain("npc_dota_hero_slark");
+
+    const without = state.enemies.filter((h) => h !== "npc_dota_hero_slark");
+    state.setEnemies(without);
+    expect(learned).toEqual([]);
+    state.setEnemies([...without, "npc_dota_hero_tinker"]);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(learned).toEqual(["npc_dota_hero_tinker"]);
+    expect(state.enemySource).toBe("manual");
+  });
+});
