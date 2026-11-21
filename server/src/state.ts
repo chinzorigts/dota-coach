@@ -41,8 +41,15 @@ const AI_VISION_MAX_TRIES = 2;
 /** Grabs allowed after the cut-off when no enemy is known yet (app started mid-game) */
 const LATE_START_GRABS = 8;
 
-/** Stop top-bar capture after this much game time (see visionWanted) */
-const VISION_GIVE_UP_SEC = 15 * 60;
+// Every top-bar grab is a desktop capture, and each one can make the game hitch for a frame (measured
+// 2026-11-21: a grab every 4s all game long, because the 5th enemy never matched, read as steady stutter;
+// turning detection off made it go away). So capture only as long as it can still pay off:
+/** Stop after this much game time. All ten portraits are up from the horn; what isn't matched by now won't be. */
+const VISION_GIVE_UP_SEC = 5 * 60;
+/** With four enemies known, give the last one this many more grabs (time for the AI fallback too), then stop */
+const VISION_SETTLE_GRABS = 5;
+/** Hard cap per match, whatever else is going on */
+const VISION_MAX_GRABS = 60;
 
 /** A courier trip from fountain to lane rarely takes longer than this */
 const TRANSIT_MS = 90_000;
@@ -118,6 +125,8 @@ export class CoachState {
   identify: PortraitIdentifier = identifyPortraits;
   persistLearned: (hero: string, png: Buffer) => Promise<void> = saveLearnedPortrait;
   private visionGrabs = 0;
+  /** Grabs since the enemy list last grew */
+  private grabsSinceNew = 0;
   private aiVisionTries = 0;
   private identifying = false;
   /** The latest captured enemy-row portraits (one per slot), kept so a correction you make can be learned */
@@ -228,6 +237,7 @@ export class CoachState {
       this.enemySource = "none";
       this.detector?.reset();
       this.visionGrabs = 0;
+      this.grabsSinceNew = 0;
       this.aiVisionTries = 0;
       this.detection = emptyDetection();
       this.advisor.reset();
@@ -741,6 +751,7 @@ export class CoachState {
       this.correctionBase = null;
       this.detector?.reset();
       this.visionGrabs = 0;
+      this.grabsSinceNew = 0;
       this.aiVisionTries = 0;
       this.detection = emptyDetection();
     }
@@ -781,6 +792,7 @@ export class CoachState {
 
   private updateEnemies(heroes: string[], source: EnemySource) {
     const changed = heroes.join() !== this.enemies.join();
+    if (heroes.length > this.enemies.length) this.grabsSinceNew = 0;
     this.enemies = heroes;
     this.enemySource = source;
     this.recompute();
@@ -808,7 +820,10 @@ export class CoachState {
     return Boolean(
       this.settings.get().detection.enabled && s?.hero && s.team && s.inProgress &&
         this.enemySource !== "manual" && this.enemySource !== "gsi" && this.enemies.length < 5 &&
-        // All ten portraits are there from the horn; what isn't recognised by 15:00 won't be by grabbing more.
+        // Four known and the fifth hasn't turned up in several grabs: more grabs only cost frames
+        !(this.enemies.length >= 4 && this.grabsSinceNew >= VISION_SETTLE_GRABS) &&
+        this.visionGrabs < VISION_MAX_GRABS &&
+        // What isn't recognised by the cut-off won't be by grabbing more.
         // Exception: nothing found yet and we've barely looked (the app was started or restarted mid-game).
         (s.clockTime < VISION_GIVE_UP_SEC || (this.enemies.length === 0 && this.visionGrabs < LATE_START_GRABS)),
     );
@@ -825,6 +840,7 @@ export class CoachState {
       const res = this.detector.update(frames, s.team, s.hero.name);
       this.lastEnemyFrames = frames[this.detector.enemySideFor(s.team)].slice(0, 5);
       this.visionGrabs++;
+      this.grabsSinceNew++; // reset in updateEnemies when the list grows
       this.detection = { calibration: res.calibration, slots: res.enemySlots, lastAt: Date.now(), error: null };
       // Only grow the list; a later bad frame never removes a confirmed hero
       if (this.enemySource !== "manual" && res.enemies.length > this.enemies.length) {

@@ -319,6 +319,29 @@ describe("bug fixes: skill points, late start, ranked-only MMR", () => {
     expect(state.visionWanted()).toBe(false);
   });
 
+  it("stops capturing once it can't pay off: 4 enemies + a stuck 5th, past 5:00, or 60 grabs", () => {
+    const { state, settings } = mk();
+    settings.update({ detection: { enabled: true } });
+    const priv = state as unknown as { visionGrabs: number; grabsSinceNew: number };
+    state.ingest(rawGame({ clock: 120 }));
+    state.enemies = ["npc_dota_hero_axe", "npc_dota_hero_lich", "npc_dota_hero_undying", "npc_dota_hero_wisp"];
+    state.enemySource = "vision";
+    priv.visionGrabs = 10;
+    priv.grabsSinceNew = 4;
+    expect(state.visionWanted()).toBe(true); // one more try for the 5th
+    priv.grabsSinceNew = 5;
+    expect(state.visionWanted()).toBe(false); // the 2026-11-21 stutter: this used to grab every 4s all game
+
+    state.enemies = state.enemies.slice(0, 2);
+    priv.grabsSinceNew = 20;
+    expect(state.visionWanted()).toBe(true); // fewer than 4 known: keep looking...
+    priv.visionGrabs = 60;
+    expect(state.visionWanted()).toBe(false); // ...but never past the per-match cap
+    priv.visionGrabs = 10;
+    state.ingest(rawGame({ clock: 5 * 60 + 1 }));
+    expect(state.visionWanted()).toBe(false); // past 5:00 with enemies known
+  });
+
   it("takes an unranked game back out of the MMR once OpenDota lists it, and keeps ranked ones", async () => {
     const { state, settings } = mk();
     settings.update({ rank: { mmr: 3000 } });

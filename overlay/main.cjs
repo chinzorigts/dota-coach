@@ -468,13 +468,14 @@ function setAutostart(on) {
 // match them against the hero art. Nothing leaves the machine, and capture stops once the lineup is
 // known or the user has typed it in.
 
-// Kept light so the game never feels it: the screen is grabbed at half resolution (a quarter of the pixels; the
-// matcher only looks at a 24x14 grid per portrait, so detail beyond that is wasted), every 4 seconds, and only
-// while the server still wants enemies. When several grabs in a row change nothing, it slows to every 12s.
+// Each grab is a desktop capture, which can make the game hitch for a frame, so: half resolution (a quarter of
+// the pixels; the matcher only looks at a 24x14 grid per portrait), every 4 seconds, and only while the server
+// still wants enemies (it stops once four are known and the fifth stays unmatched, at 5:00, or after 60 grabs).
+// When a few grabs in a row change nothing, it slows to every 16s.
 const DETECT_INTERVAL_MS = 4000;
 const DETECT_SCALE = 0.5;
-const IDLE_AFTER = 6; // grabs without a new enemy before slowing down
-const IDLE_EVERY = 3; // then grab on one tick in three
+const IDLE_AFTER = 3; // grabs without a new enemy before slowing down
+const IDLE_EVERY = 4; // then grab on one tick in four
 let unchangedGrabs = 0;
 let skipTick = 0;
 let lastEnemyCount = -1;
